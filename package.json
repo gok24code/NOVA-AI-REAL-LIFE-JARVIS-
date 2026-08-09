@@ -1,0 +1,64 @@
+{
+  "name": "nova-neural-interface",
+  "version": "1.0.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "electron": "electron .",
+    "electron:pack": "npm run build && electron-builder --dir",
+    "electron:dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.nova.assistant",
+    "productName": "N.O.V.A.",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      ".next/**/*",
+      "public/**/*",
+      "app/**/*",
+      "lib/**/*",
+      "components/**/*",
+      "workers/**/*",
+      "types/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "next.config.mjs",
+      "next.config.ts",
+      "nova_identity.md",
+      ".env.local",
+      "nova_lessons.md",
+      "nova_profile.json"
+    ],
+    "win": {
+      "target": "portable"
+    }
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "@types/leaflet": "^1.9.22",
+    "@xenova/transformers": "^2.17.2",
+    "leaflet": "^1.9.4",
+    "msedge-tts": "^2.0.7",
+    "next": "^16.2.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.185.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5"
+  }
+}

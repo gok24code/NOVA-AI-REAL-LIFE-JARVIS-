@@ -1,0 +1,38 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# electron-builder output — derlenmiş uygulama, repoya girmez
+/release
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env files
+.env*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# private roadmap — not for public repo
+CLAUDE.md
+
+# self-update lessons — kişisel/öğrenilmiş notlar, public repoya gitmemeli
+nova_lessons.md
+
+# yapılandırılmış kullanıcı profili (isim, tercihler) — kişisel veri
+nova_profile.json

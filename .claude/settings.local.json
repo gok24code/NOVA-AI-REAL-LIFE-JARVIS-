@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -oE 'THINGIVERSE_API_KEY=.{0,3}' .env.local)",
+      "Bash(grep -oE 'MESHY_API_KEY=.{0,3}' .env.local)",
+      "Bash(npx tsc *)",
+      "Bash(curl -s \"http://localhost:3000/api/services/thingiverse?q=phone+stand\")",
+      "Bash(curl -s -D - -o /tmp/thing-download.bin \"http://localhost:3000/api/services/thingiverse/download\" -X POST -H \"Content-Type: application/json\" -d '{\"thingId\":2120591,\"name\":\"phone-stand\"}')",
+      "Read(//tmp/**)",
+      "Bash(npx eslint *)",
+      "Bash(nslookup speech.platform.bing.com)",
+      "Bash(nslookup google.com)",
+      "Bash(ping -n 2 8.8.8.8)",
+      "Bash(node -e ' *)",
+      "Bash(grep -n \"{ scene, autoQuery, onSpeak, onLog }\" components/ModelBrowser.tsx)",
+      "Bash(npm install *)",
+      "Bash(curl -s \"http://localhost:3000/api/services/geocode?q=Istanbul\")",
+      "Bash(grep -oE \"YOUTUBE_API_KEY=.{0,4}\" .env.local)",
+      "Bash(curl -s -X POST \"http://localhost:3000/api/self-update\" -H \"Content-Type: application/json\" -d '{\"lesson\":\"Kullanıcı akşamları kısa ve net cevap tercih ediyor.\"}')",
+      "Bash(curl -s \"http://localhost:3000/api/self-update\")",
+      "Bash(xargs grep -l \"Prosody\")",
+      "Bash(grep -oE \"YOUTUBE_API_KEY=.{0,4}\" \"C:/Users/gok2/Desktop/git/nova-by-gok24code/.env.local\")",
+      "Bash(ipconfig)",
+      "Bash(npm run *)",
+      "Bash(timeout 20 npx electron .)",
+      "Bash(node node_modules/electron/install.js)",
+      "Bash(npx electron-builder *)",
+      "PowerShell(Get-Process *)",
+      "Bash(rm -rf release)",
+      "Bash(mkdir -p /c/NovaReleaseTest)",
+      "PowerShell(Get-MpPreference *)"
+    ]
+  }
+}

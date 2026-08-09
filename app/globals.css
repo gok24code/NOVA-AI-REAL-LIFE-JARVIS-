@@ -1,0 +1,532 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: radial-gradient(circle at 50% 50%, #0a0e27 0%, #050812 100%);
+  overflow: hidden;
+  font-family: "Courier New", monospace;
+}
+
+.orb-root {
+  position: fixed;
+  inset: 0;
+  cursor: grab;
+}
+
+.orb-root:active {
+  cursor: grabbing;
+}
+
+.orb-root canvas {
+  display: block;
+}
+
+/* Film grain overlay */
+.overlay-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 150px;
+  mix-blend-mode: screen;
+}
+
+/* Scanline overlay */
+.overlay-scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 11;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
+  );
+  opacity: 0.3;
+}
+
+/* Vignette */
+.overlay-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 40%,
+    rgba(0, 0, 0, 0.7) 100%
+  );
+}
+
+/* ——— HUD ——— */
+.hud {
+  position: fixed;
+  z-index: 20;
+  color: #06b6d4;
+  font-family: "Courier New", monospace;
+  user-select: none;
+}
+
+.hud-controls {
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.hud-btn {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 12px;
+  background: rgba(0, 20, 40, 0.55);
+  border: 1px solid rgba(6, 182, 212, 0.45);
+  border-radius: 4px;
+  color: #06b6d4;
+  font-family: "Courier New", monospace;
+  font-size: 15px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  text-shadow: 0 0 6px rgba(6, 182, 212, 0.7);
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.12) inset;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hud-btn:hover {
+  background: rgba(0, 30, 50, 0.7);
+  border-color: rgba(59, 130, 246, 0.9);
+  box-shadow:
+    0 0 14px rgba(6, 182, 212, 0.35),
+    0 0 12px rgba(6, 182, 212, 0.2) inset;
+}
+
+.hud-btn:active {
+  background: rgba(0, 40, 60, 0.8);
+}
+
+.hud-btn[aria-pressed="true"] {
+  background: rgba(0, 60, 80, 0.6);
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.hud-row {
+  display: flex;
+  gap: 8px;
+}
+
+.hud-hint {
+  top: 24px;
+  right: 24px;
+  font-size: 11px;
+  line-height: 1.7;
+  letter-spacing: 0.1em;
+  opacity: 0.55;
+  text-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+  pointer-events: none;
+  text-align: right;
+}
+
+.hud-hint .key {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid rgba(6, 182, 212, 0.5);
+  border-radius: 3px;
+  margin-right: 4px;
+  font-size: 10px;
+}
+
+.hud-title {
+  top: 24px;
+  left: 24px;
+  font-size: 13px;
+  letter-spacing: 0.35em;
+  opacity: 0.7;
+  text-shadow: 0 0 10px rgba(6, 182, 212, 0.8);
+  pointer-events: none;
+}
+
+.hud-title::after {
+  content: "";
+  display: block;
+  margin-top: 6px;
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(to right, rgba(6, 182, 212, 0.8), transparent);
+}
+
+.hud-error {
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: #ff5533;
+  text-shadow: 0 0 8px rgba(255, 60, 30, 0.7);
+}
+
+/* ——— Camera preview panel ——— */
+.camera-panel {
+  position: relative;
+  width: 208px;
+  height: 156px;
+  display: none;
+  border: 1px solid rgba(6, 182, 212, 0.45);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #000f1a;
+  box-shadow: 0 0 16px rgba(6, 182, 212, 0.15);
+}
+
+.camera-panel.visible {
+  display: block;
+}
+
+.camera-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  filter: sepia(1) hue-rotate(140deg) saturate(2) brightness(0.8)
+    contrast(1.15);
+  opacity: 0.85;
+}
+
+.camera-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.camera-status {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 3px 6px;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: #3b82f6;
+  background: rgba(0, 15, 25, 0.65);
+  text-shadow: 0 0 6px rgba(6, 182, 212, 0.8);
+}
+
+/* ——— COMMAND panel ——— */
+.hud-command {
+  bottom: 24px;
+  left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: all;
+  max-width: 300px;
+}
+
+.hud-command-label {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  opacity: 0.6;
+  color: #06b6d4;
+  text-shadow: 0 0 6px rgba(6, 182, 212, 0.5);
+}
+
+.hud-command-row {
+  display: flex;
+  gap: 6px;
+}
+
+.hud-command-input {
+  width: 200px;
+  height: 34px;
+  padding: 0 8px;
+  background: rgba(0, 15, 30, 0.7);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  border-radius: 4px;
+  color: #06b6d4;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  outline: none;
+  backdrop-filter: blur(2px);
+}
+
+.hud-command-input::placeholder {
+  color: rgba(6, 182, 212, 0.35);
+}
+
+.hud-command-input:focus {
+  border-color: rgba(59, 130, 246, 0.8);
+  box-shadow: 0 0 8px rgba(6, 182, 212, 0.2);
+}
+
+.hud-command-send {
+  height: 34px;
+  padding: 0 10px;
+  background: rgba(0, 20, 40, 0.6);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  border-radius: 4px;
+  color: #06b6d4;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  text-shadow: 0 0 6px rgba(6, 182, 212, 0.6);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.hud-command-send:hover {
+  background: rgba(0, 40, 60, 0.8);
+  border-color: rgba(59, 130, 246, 0.9);
+}
+
+.hud-command-log {
+  max-height: 60px;
+  overflow-y: auto;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+  color: #06b6d4;
+  line-height: 1.5;
+}
+
+.hud-command-log-entry {
+  opacity: 0.8;
+}
+
+/* ——— Mikrofon satırı ——— */
+.hud-mic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-mic-btn {
+  height: 30px;
+  padding: 0 10px;
+  background: rgba(0, 20, 40, 0.6);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  border-radius: 4px;
+  color: #06b6d4;
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
+}
+
+.hud-mic-btn:hover:not(:disabled) {
+  background: rgba(0, 40, 60, 0.8);
+  border-color: rgba(59, 130, 246, 0.9);
+}
+
+.hud-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.hud-mic-btn.loading {
+  opacity: 0.55;
+  border-color: rgba(6, 182, 212, 0.25);
+}
+
+/* Dinleme sırasında kırmızı + nabız animasyonu */
+.hud-mic-btn.listening {
+  background: rgba(60, 0, 0, 0.6);
+  border-color: rgba(255, 80, 60, 0.8);
+  color: #ff5533;
+  box-shadow: 0 0 12px rgba(255, 60, 30, 0.3);
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 60, 30, 0.3); }
+  50%       { box-shadow: 0 0 18px rgba(255, 60, 30, 0.6); }
+}
+
+.hud-mic-status {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  opacity: 0.5;
+  color: #06b6d4;
+  white-space: nowrap;
+}
+
+.hud-mic-status.active {
+  opacity: 0.9;
+  text-shadow: 0 0 6px rgba(6, 182, 212, 0.7);
+  animation: status-blink 1s step-end infinite;
+}
+
+@keyframes status-blink {
+  0%, 100% { opacity: 0.9; }
+  50%       { opacity: 0.4; }
+}
+
+/* ——— Wake word butonu ——— */
+.hud-wake-btn {
+  height: 30px;
+  padding: 0 10px;
+  background: rgba(0, 20, 40, 0.6);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  border-radius: 4px;
+  color: rgba(6, 182, 212, 0.5);
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  transition: background 0.15s ease, border-color 0.2s ease,
+              color 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+}
+
+.hud-wake-btn:hover:not(:disabled) {
+  border-color: rgba(6, 182, 212, 0.6);
+  color: #06b6d4;
+}
+
+.hud-wake-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Arkaplanda dinliyor — sakin yeşil nabız */
+.hud-wake-btn.wake-background {
+  background: rgba(0, 30, 20, 0.65);
+  border-color: rgba(34, 197, 94, 0.6);
+  color: #22c55e;
+  animation: wake-idle 2.4s ease-in-out infinite;
+}
+
+@keyframes wake-idle {
+  0%, 100% { box-shadow: 0 0 6px rgba(34, 197, 94, 0.2); }
+  50%       { box-shadow: 0 0 14px rgba(34, 197, 94, 0.45); }
+}
+
+/* Wake word duyuldu — parlak beyaz/cyan hızlı nabız */
+.hud-wake-btn.wake-activated {
+  background: rgba(0, 50, 60, 0.75);
+  border-color: rgba(6, 182, 212, 0.95);
+  color: #fff;
+  text-shadow: 0 0 8px rgba(6, 182, 212, 0.9);
+  animation: wake-active 0.7s ease-in-out infinite;
+}
+
+@keyframes wake-active {
+  0%, 100% { box-shadow: 0 0 10px rgba(6, 182, 212, 0.4); }
+  50%       { box-shadow: 0 0 24px rgba(6, 182, 212, 0.8); }
+}
+
+/* Son transcript göstergesi */
+.hud-transcript {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: #3b82f6;
+  opacity: 0.8;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-transcript-label {
+  opacity: 0.5;
+  letter-spacing: 0.15em;
+}
+
+/* ——— Müzik oynatıcı — profesyonel, orb gibi yüzen widget ——— */
+@keyframes music-enter {
+  0%   { opacity: 0; transform: translateY(28px) scale(0.92); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes music-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-9px); }
+}
+
+@keyframes music-glow {
+  0%, 100% { box-shadow: 0 0 14px rgba(6, 182, 212, 0.15), 0 10px 28px rgba(0, 0, 0, 0.45); }
+  50%      { box-shadow: 0 0 26px rgba(6, 182, 212, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45); }
+}
+
+.music-widget {
+  animation:
+    music-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both,
+    music-float 3.6s ease-in-out 0.5s infinite,
+    music-glow 3.6s ease-in-out 0.5s infinite;
+}
+
+@keyframes eq-bar {
+  0%, 100% { height: 3px; }
+  50%      { height: 13px; }
+}
+
+.music-eq-bar {
+  width: 2.5px;
+  border-radius: 2px;
+  background: #06b6d4;
+  animation: eq-bar 0.9s ease-in-out infinite;
+}
+
+/* ——— Holographic panel entrance (proje formu / 3D viewer tarzı açılış) ——— */
+@keyframes holo-materialize {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.85);
+    filter: blur(8px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    filter: blur(0px);
+  }
+}
+
+.holo-enter {
+  animation: holo-materialize 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (max-width: 600px) {
+  .hud-hint {
+    display: none;
+  }
+  .hud-command {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .hud-hint {
+    right: 8px;
+    font-size: 10px;
+  }
+}
