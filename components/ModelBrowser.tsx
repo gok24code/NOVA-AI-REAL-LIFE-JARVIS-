@@ -95,8 +95,7 @@ const ModelBrowser = forwardRef<ModelBrowserHandle, ModelBrowserProps>(function 
 
   useEffect(() => {
     onOpenChange?.(open);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, onOpenChange]);
 
   async function pickFolder() {
     try {
@@ -258,8 +257,7 @@ const ModelBrowser = forwardRef<ModelBrowserHandle, ModelBrowserProps>(function 
         `${results.length} sonuç buldum. ${listing}. Hangisini istersiniz? Birinci, ikinci ya da üçüncü deyin.`,
       );
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoQuery]);
+  }, [autoQuery, onSpeak]);
 
   if (!open) return null;
 

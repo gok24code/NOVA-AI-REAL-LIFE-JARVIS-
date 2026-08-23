@@ -21,6 +21,7 @@
     "files": [
       "electron/**/*",
       ".next/**/*",
+      "!.next/dev/**/*",
       "public/**/*",
       "app/**/*",
       "lib/**/*",

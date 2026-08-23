@@ -61,7 +61,9 @@ export function useAlwaysOn(voice: VoiceResult) {
         }
       },
       onError: (error) => {
-        console.error("[wake] recognition error:", error);
+        if (error !== "no-speech" && error !== "aborted") {
+          console.error("[wake] recognition error:", error);
+        }
         recRef.current = null;
         if (!enabledRef.current) return;
         if (statusRef.current === "background") {

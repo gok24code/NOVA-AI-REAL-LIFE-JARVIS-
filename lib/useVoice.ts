@@ -1132,7 +1132,9 @@ export function useVoice(
         void processInput(text);
       },
       onError: (error) => {
-        console.error("[speech] recognition error:", error);
+        if (error !== "no-speech" && error !== "aborted") {
+          console.error("[speech] recognition error:", error);
+        }
         setIsListening(false);
         setModelStatus("error");
       },

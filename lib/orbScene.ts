@@ -6,6 +6,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import type { AssemblyPart } from "./editScene";
 
 export interface OrbSceneApi {
   /** Rotate the camera around the orb by the given angles (radians). */
@@ -21,6 +22,8 @@ export interface OrbSceneApi {
   setCoreLabel(text: string): void;
   dispose(): void;
   loadModel(url: string, name?: string, format?: "glb" | "stl"): Promise<void>;
+  /** Displays several pre-positioned parts (from an edit-mode assembly) as one holographic group. */
+  loadAssembly(parts: AssemblyPart[], name?: string): void;
   clearModel(): void;
   setFocus(active: boolean): void;
   loadVideo(url: string): void;
@@ -724,10 +727,9 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
       currentModelBox = null;
     }
     modelFocus = false;
-    if (!externalFocus) {
-      smoothTarget = HOME_POSITION.clone();
-      setCoreLabel("NEURAL CORE");
-    }
+    externalFocus = false;
+    smoothTarget = HOME_POSITION.clone();
+    setCoreLabel("NEURAL CORE");
   }
 
   function setFocus(active: boolean) {
@@ -824,6 +826,41 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
         reject,
       );
     });
+  }
+
+  function loadAssembly(parts: AssemblyPart[], name?: string): void {
+    clearModel();
+    if (parts.length === 0) return;
+
+    const group = new THREE.Group();
+    parts.forEach((part) => {
+      const solidMat = new THREE.MeshBasicMaterial({
+        color: 0x06b6d4,
+        transparent: true,
+        opacity: 0.10,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const solid = new THREE.Mesh(part.geometry, solidMat);
+      solid.position.copy(part.position);
+      solid.quaternion.copy(part.quaternion);
+
+      const edgesGeo = new THREE.EdgesGeometry(part.geometry, 25);
+      const edgeMat = new THREE.LineBasicMaterial({
+        color: 0x06b6d4,
+        transparent: true,
+        opacity: 0.75,
+        blending: THREE.AdditiveBlending,
+      });
+      const wire = new THREE.LineSegments(edgesGeo, edgeMat);
+      wire.position.copy(part.position);
+      wire.quaternion.copy(part.quaternion);
+
+      group.add(solid, wire);
+    });
+
+    fitModel(group, name);
   }
 
   // ═══════════════════════════════════════════════
@@ -1200,6 +1237,7 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     setCoreLabel,
     dispose,
     loadModel,
+    loadAssembly,
     clearModel,
     setFocus,
     loadVideo,

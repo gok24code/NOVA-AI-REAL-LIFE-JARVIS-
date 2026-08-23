@@ -7,18 +7,21 @@ import { useVoice } from "@/lib/useVoice";
 import { useAlwaysOn } from "@/lib/useAlwaysOn";
 import { useModelLibrary } from "@/lib/useModelLibrary";
 import { useObjectDetector } from "@/lib/useObjectDetector";
+import { useEditMode } from "@/lib/useEditMode";
 import VideoOverlay from "./VideoOverlay";
 import ObjectScanner, { type ObjectScannerHandle } from "./ObjectScanner";
 import ProjectForm, { type ProjectFormHandle } from "./ProjectForm";
 import ModelBrowser, { type ModelBrowserHandle, type ThingSearchTrigger } from "./ModelBrowser";
 import MapView, { type MapViewHandle } from "./MapView";
 import MusicPlayer, { type MusicPlayerHandle } from "./MusicPlayer";
+import { EditModeUI } from "./EditModeUI";
+import { TransformPanel } from "./TransformPanel";
 
 type CameraState = "off" | "starting" | "on" | "error";
 
 const MODE_LABEL: Record<TrackerStatus["mode"], string> = {
-  idle: "STANDBY",
-  spin: "SPIN",
+  standby: "STANDBY",
+  rotate: "ROTATE",
   zoom: "ZOOM",
 };
 
@@ -29,9 +32,10 @@ export default function NovaOrb() {
   const overlayRef   = useRef<HTMLCanvasElement>(null);
   const sceneRef     = useRef<OrbSceneApi | null>(null);
   const trackerRef   = useRef<HandTracker | null>(null);
+  const handCursorRef = useRef<HTMLDivElement>(null);
 
   const [camera, setCamera] = useState<CameraState>("off");
-  const [status, setStatus] = useState<TrackerStatus>({ hands: 0, mode: "idle" });
+  const [status, setStatus] = useState<TrackerStatus>({ hands: 0, mode: "standby" });
   const [camError, setCamError] = useState<string | null>(null);
   const [commandInput, setCommandInput] = useState("");
   const [commandLog, setCommandLog] = useState<string[]>([]);
@@ -51,11 +55,17 @@ export default function NovaOrb() {
 
   const modelLib = useModelLibrary(sceneReady ? sceneRef.current : null);
   const detector = useObjectDetector();
+  const editMode = useEditMode();
 
   const alwaysOnRef = useRef<(() => void) | null>(null);
   const captureFrameRef = useRef<(() => { imageBase64: string; mimeType: string } | null) | null>(null);
   const speakTextRef = useRef<((text: string) => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Gesture callbacks'de kullanılan state'leri ref'ten oku (closure problem çözmek için)
+  const modelBrowserOpenRef = useRef(false);
+  const modelLibRef = useRef(modelLib);
+  const editModeRef = useRef(editMode);
 
   const searchYouTube = useCallback(async (query: string) => {
     const apiKey = /* can't access env client-side, always go through API route */ undefined;
@@ -156,7 +166,14 @@ export default function NovaOrb() {
               });
             });
           } else {
-            fileInputRef.current?.click();
+            // Web tarayıcısı: voice activation'dan dolayı file picker açılamıyor
+            // (browser security). Kullanıcıya uyarı göster.
+            setCommandLog((prev) => [...prev.slice(-9), "◈ Tarayıcıda model klasörü açmak için manuel olarak tıklamanız gerekiyor. (Ses komutu desteklenmiyor)"]);
+            try {
+              fileInputRef.current?.click();
+            } catch {
+              // Suppress "user activation required" error
+            }
           }
           break;
         case "next_model":
@@ -283,11 +300,57 @@ export default function NovaOrb() {
     };
   }, []);
 
+  useEffect(() => {
+    modelBrowserOpenRef.current = modelBrowserOpen;
+  }, [modelBrowserOpen]);
+
+  useEffect(() => {
+    modelLibRef.current = modelLib;
+  }, [modelLib]);
+
+  useEffect(() => {
+    editModeRef.current = editMode;
+  }, [editMode]);
+
+  // Yerel model klasörü seçilip yüklendiğinde gesture'ları etkinleştir
+  useEffect(() => {
+    if (modelLib.files.length > 0) {
+      setModelBrowserOpen(true);
+    }
+  }, [modelLib.files.length]);
+
+  // Edit mode scene initialization
+  const editSceneContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (editMode.enabled) {
+      if (editSceneContainerRef.current) {
+        editMode.initialize(editSceneContainerRef.current);
+      }
+
+      // Load all models from modelLib into edit scene
+      if (modelLib.files.length > 0) {
+        const models = modelLib.files.map((f) => ({
+          url: URL.createObjectURL(f.file),
+          name: f.name,
+          format: /\.stl$/i.test(f.name) ? ("stl" as const) : ("glb" as const),
+        }));
+        void editMode.loadAllModels(models);
+      }
+    } else {
+      const scene = editMode.getScene();
+      const parts = scene?.getAssemblyParts() ?? [];
+      if (parts.length > 0) {
+        sceneRef.current?.loadAssembly(parts, "ASSEMBLY");
+      }
+      editMode.cleanup();
+    }
+  }, [editMode.enabled]);
+
   const stopGestures = useCallback(() => {
     trackerRef.current?.stop();
     trackerRef.current = null;
     setCamera("off");
-    setStatus({ hands: 0, mode: "idle" });
+    setStatus({ hands: 0, mode: "standby" });
   }, []);
 
   const startGestures = useCallback(async () => {
@@ -296,16 +359,83 @@ export default function NovaOrb() {
     if (!video || !overlay || trackerRef.current) return;
     setCamera("starting");
     setCamError(null);
+    let navigateDelta = 0;
     const tracker = new HandTracker(video, overlay, {
-      onRotate: (dt, dp) => sceneRef.current?.rotateBy(dt, dp),
-      onZoom: (factor) => sceneRef.current?.zoomBy(factor),
+      onRotate: (dt, dp) => {
+        if (editModeRef.current.enabled) {
+          // Free hand: spins whatever is selected (a model, or the whole
+          // assembly via the center handle) — orb-style inertia. No-op if
+          // nothing is selected.
+          editModeRef.current.getScene()?.addRotationVelocity(dt, dp);
+        } else {
+          sceneRef.current?.rotateBy(dt, dp);
+        }
+      },
+      onZoom: (factor) => {
+        if (!editModeRef.current.enabled) {
+          sceneRef.current?.zoomBy(factor);
+        } else {
+          editModeRef.current.getScene()?.zoomCamera(factor);
+        }
+      },
       onStatus: setStatus,
-      // Üç parmak: müziği duraklat/devam ettir. Sağ el yumruk: önceki şarkı,
-      // sol el yumruk: sonraki şarkı.
-      onThreeFingers: () => musicPlayerRef.current?.togglePause(),
-      onFist: (hand) => {
-        if (hand === "Right") musicPlayerRef.current?.prev();
-        else musicPlayerRef.current?.next();
+      onThreeFingers: () => {
+        if (editModeRef.current.enabled && editModeRef.current.getScene()?.getSelected().length) {
+          // 3-finger: small inertial pulse on the pitch axis
+          editModeRef.current.getScene()?.addRotationVelocity(0, 0.4);
+        } else if (!editModeRef.current.enabled) {
+          musicPlayerRef.current?.togglePause();
+        }
+      },
+      onNavigate: (dt, dp) => {
+        if (editModeRef.current.enabled) {
+          // One-hand pinch: drag the selected models directly (editScene owns all scaling)
+          editModeRef.current.getScene()?.dragSelectedModels(dt, dp);
+          return;
+        }
+        if (modelBrowserOpenRef.current) {
+          navigateDelta += dt;
+          if (Math.abs(navigateDelta) > 0.3) {
+            if (navigateDelta > 0) {
+              void modelLibRef.current.loadNext().then((msg) => {
+                setCommandLog((prev) => [...prev.slice(-9), `◈ ${msg}`]);
+              });
+            } else {
+              void modelLibRef.current.loadPrev().then((msg) => {
+                setCommandLog((prev) => [...prev.slice(-9), `◈ ${msg}`]);
+              });
+            }
+            navigateDelta = 0;
+          }
+        }
+      },
+      onHandPosition: (point, active) => {
+        const el = handCursorRef.current;
+        if (!el) return;
+        if (!point) {
+          el.style.opacity = "0";
+          return;
+        }
+        el.style.opacity = "1";
+        el.style.left = `${point.x * 100}vw`;
+        el.style.top = `${point.y * 100}vh`;
+        el.classList.toggle("hand-cursor--active", active);
+      },
+      onPinchStart: (point) => {
+        if (!editModeRef.current.enabled) return;
+        const scene = editModeRef.current.getScene();
+        const container = editSceneContainerRef.current;
+        if (!scene || !container) return;
+        const x = point.x * container.clientWidth;
+        const y = point.y * container.clientHeight;
+        const hit = scene.raycastFromScreen(x, y);
+        if (!hit) {
+          editModeRef.current.selectModels([]);
+          return;
+        }
+        const current = scene.getSelected();
+        const alreadySelected = current.length === 1 && current[0] === hit.modelId;
+        editModeRef.current.selectModels(alreadySelected ? [] : [hit.modelId]);
       },
     });
     trackerRef.current = tracker;
@@ -334,6 +464,11 @@ export default function NovaOrb() {
       if (e.target instanceof HTMLInputElement) return;
       if (e.repeat) return;
       switch (e.key) {
+        case "Escape":
+          if (editMode.enabled) {
+            editMode.setEnabled(false);
+          }
+          break;
         case "+": case "=": sceneRef.current?.startZoomIn(); break;
         case "-": case "_": sceneRef.current?.startZoomOut(); break;
         case "r": case "R": sceneRef.current?.resetView(); break;
@@ -375,14 +510,49 @@ export default function NovaOrb() {
 
   return (
     <>
-      <div ref={containerRef} className="orb-root" />
+      <div ref={containerRef} className="orb-root" style={{ display: editMode.enabled ? "none" : "block" }} />
+
+      {editMode.enabled && <div className="edit-mode-bg" />}
+
+      <div
+        ref={editSceneContainerRef}
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          zIndex: 5,
+          overflow: "hidden",
+          display: editMode.enabled ? "block" : "none",
+        }}
+        onClick={(e) => {
+          const scene = editMode.getScene();
+          if (!scene) return;
+          const rect = editSceneContainerRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          const hit = editMode.raycastFromScreen(x, y);
+          if (!hit) {
+            editMode.selectModels([]);
+            return;
+          }
+          const current = scene.getSelected();
+          const alreadySelected = current.length === 1 && current[0] === hit.modelId;
+          editMode.selectModels(alreadySelected ? [] : [hit.modelId]);
+        }}
+      />
+
       <div className="overlay-vignette" />
       <div className="overlay-grain" />
       <div className="overlay-scanlines" />
 
-      <div className="hud hud-title">N.O.V.A.</div>
+      <div ref={handCursorRef} className="hand-cursor" style={{ opacity: 0 }} />
 
-      <div className="hud hud-hint">
+      <div className="hud hud-title">{editMode.enabled ? "N.O.V.A. // EDIT" : "N.O.V.A."}</div>
+
+      {!editMode.enabled && <div className="hud hud-hint">
         <div>
           <span className="key">SÜRÜKLE</span> döndür&nbsp;&nbsp;
           <span className="key">KAYDIR</span> zoom
@@ -398,7 +568,21 @@ export default function NovaOrb() {
             <span className="key">R</span> sıfırla
           </div>
         )}
-      </div>
+      </div>}
+
+      {editMode.enabled && <div className="hud hud-hint">
+        <div>
+          <span className="key">ESC</span> çık&nbsp;&nbsp;
+          <span className="key">TIKLA</span> seç
+        </div>
+        {cameraOn && (
+          <div>
+            <span className="key">SERBEST EL</span> döndür&nbsp;&nbsp;
+            <span className="key">1-PINCH</span> sürükle&nbsp;&nbsp;
+            <span className="key">2-PINCH</span> zoom
+          </div>
+        )}
+      </div>}
 
       {/* COMMAND + SES paneli */}
       <div className="hud hud-command">
@@ -518,6 +702,14 @@ export default function NovaOrb() {
                 : "JESTLER AÇIK"
               : "JESTLER KAPALI"}
           </button>
+          <button
+            type="button"
+            className="hud-btn"
+            onClick={() => editMode.setEnabled(!editMode.enabled)}
+            style={{ fontSize: 12, padding: "4px 8px" }}
+          >
+            {editMode.enabled ? "EDIT MODE ✓" : "EDIT MODE"}
+          </button>
         </div>
         <div className="hud-row">
           <button
@@ -539,6 +731,30 @@ export default function NovaOrb() {
           <button type="button" className="hud-btn" onClick={() => sceneRef.current?.resetView()}>SIFIRLA</button>
         </div>
       </div>
+
+      {editMode.enabled && (
+        <>
+          <EditModeUI
+            selectedCount={editMode.selectedCount}
+            modelCount={editMode.modelCount}
+            hoveredModelName={editMode.hoveredModelName || undefined}
+          />
+          <TransformPanel
+            selectedCount={editMode.selectedCount}
+            onDelete={() => {
+              const selected = editMode.getScene()?.getSelected() || [];
+              selected.forEach((id) => {
+                editMode.getScene()?.removeModel(id);
+              });
+              editMode.selectModels([]);
+              editMode.getScene()?.focusOnModels();
+            }}
+            onFocusSelected={() => {
+              editMode.getScene()?.focusOnModels(editMode.getScene()?.getSelected());
+            }}
+          />
+        </>
+      )}
     </>
   );
 }

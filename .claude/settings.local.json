@@ -29,7 +29,22 @@
       "Bash(rm -rf release)",
       "Bash(mkdir -p /c/NovaReleaseTest)",
       "PowerShell(Get-MpPreference *)",
-      "Bash(\\\\.md\")"
+      "Bash(\\\\.md\")",
+      "PowerShell(try { \\(Invoke-WebRequest http://localhost:3000 -TimeoutSec 5 -ErrorAction Stop\\).Content | Select-String 'N.O.V.A' } catch { Write-Host 'Server not responding yet' })",
+      "PowerShell(Start-Sleep -Seconds 15; try { \\(Invoke-WebRequest http://localhost:3000 -TimeoutSec 5\\).Content.Length } catch { Write-Host 'Still waiting...' })",
+      "PowerShell(try { $response = Invoke-WebRequest http://localhost:3000 -TimeoutSec 3 -ErrorAction Stop; $response.StatusCode; Write-Host 'Server is up!' } catch { Write-Host \"Error: $\\($_.Exception.Message\\)\" })",
+      "Bash(xargs grep -l \"useState\\\\|Context\\\\|Zustand\\\\|Jotai\")",
+      "Bash(xargs grep -l \"useModelLibrary\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out.html -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out2.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out3.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out4.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out5.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out6.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out7.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out8.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out9.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000 -o /tmp/out10.html -w \"HTTP:%{http_code}\\\\n\")"
     ]
   }
 }
