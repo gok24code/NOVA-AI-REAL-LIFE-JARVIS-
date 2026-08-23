@@ -5,6 +5,14 @@ import { loadMemory, saveMemory, type Message } from "./memory";
 import { canListen, startListen, type ListenHandle } from "./speechEngine";
 import { playListenChime } from "./chime";
 
+import {
+  type BargeInContext,
+  type BargeInResult,
+  createBargeInContext,
+  intelligentBargeInHandler,
+  isSemanticCheckEnabled,
+} from "./intelligentBargeIn";
+
 export type ModelStatus =
   | "ready"
   | "listening"
@@ -629,6 +637,9 @@ export function useVoice(
   const lastTranscriptRef = useRef<string>("");
   const sessionRef = useRef(0);
   const processInputRef = useRef<((text: string) => Promise<void>) | null>(null);
+  const bargeInRecognitionRef = useRef<ListenHandle | null>(null);
+  const bargeInActiveRef = useRef(false);
+  const lastAssistantMessageRef = useRef<string>("");
 
   // Stable refs for callbacks — processInput never goes stale even across renders
   const onIntentRef      = useRef(onIntent);
@@ -700,6 +711,35 @@ export function useVoice(
     setIsListening(false);
     setModelStatus("ready");
   }, []);
+
+  // ── Barge-in dinleyicisi: NOVA konuşurken kesme algılar ────────────────────
+  function startBargeInListener(onUserSpoke: (userInput: string) => void): void {
+    if (bargeInActiveRef.current || !canListenRef.current) return;
+    bargeInActiveRef.current = true;
+
+    bargeInRecognitionRef.current = startListen({
+      lang: "tr-TR",
+      onStart: () => {},
+      onResult: (text: string, confidence: number) => {
+        // Confidence eşiği: 0.4 (ılımlı — çok hassas değil, çok kör de değil)
+        if (confidence > 0.4 && text.length > 2) {
+          console.log(`[barge-in] Kesme algılandı: "${text}" (confidence ${confidence})`);
+          stopBargeInListener();
+          onUserSpoke(text);
+        }
+      },
+      onError: () => { stopBargeInListener(); },
+      onEnd: () => { stopBargeInListener(); },
+    });
+  }
+
+  function stopBargeInListener(): void {
+    if (bargeInRecognitionRef.current) {
+      bargeInRecognitionRef.current.stop?.();
+      bargeInRecognitionRef.current = null;
+    }
+    bargeInActiveRef.current = false;
+  }
 
   // ── Cevap pipeline ────────────────────────────────────────────────────────
   const processInput = useCallback(async (text: string) => {
@@ -899,9 +939,25 @@ export function useVoice(
         const sentence = sentenceQueue.shift()!;
         isSpeaking = true;
         setModelStatus("speaking");
+
+        startBargeInListener((userInput: string) => {
+          if (!isActive()) return;
+          cancelSpeech();
+          isSpeaking = false;
+
+          const bargeInContext = createBargeInContext(
+            lastAssistantMessageRef.current,
+            conversationRef.current
+          );
+
+          void processBargeIn(userInput, bargeInContext);
+        });
+
         speak(sentence, () => {
+          stopBargeInListener();
           if (!isActive()) return;
           isSpeaking = false;
+          lastAssistantMessageRef.current = sentence;
           if (sentenceQueue.length > 0) {
             speakNext();
           } else if (streamDone) {
@@ -926,6 +982,7 @@ export function useVoice(
         conversationRef.current.push({ role: "assistant", content: fullReply });
         saveMemory(conversationRef.current);
         setLastResponse(fullReply);
+        lastAssistantMessageRef.current = fullReply;
         streamDone = true;
 
         // stream bitti ama kuyruk hâlâ boşsa (kısa yanıtlar) direkt ready
@@ -948,6 +1005,104 @@ export function useVoice(
     setModelStatus("speaking");
     speak(fallback, () => { if (isActive()) setModelStatus("ready"); });
   }, [ollamaOnline]);
+
+  // ── Barge-in cevap pipeline: NOVA konuşurken kesildiğinde devreye girer ────
+  const processBargeIn = useCallback(
+    async (userInput: string, context: BargeInContext) => {
+      const session = ++sessionRef.current;
+      const isActive = () => session === sessionRef.current;
+
+      let bargeInResult: BargeInResult;
+      try {
+        bargeInResult = await intelligentBargeInHandler(userInput, context, {
+          useSemantic: isSemanticCheckEnabled(),
+        });
+      } catch (err) {
+        console.error("[barge-in] Handler error:", err);
+        await processInput(userInput);
+        return;
+      }
+
+      if (!isActive()) return;
+      console.log(`[barge-in] Action: ${bargeInResult.action} — ${bargeInResult.reasoning}`);
+
+      if (bargeInResult.action === "command") {
+        await processInput(userInput);
+        return;
+      }
+
+      conversationRef.current.push({ role: "user", content: userInput });
+      const history = conversationRef.current.slice(-20);
+      setModelStatus("thinking");
+
+      let searchContext: string | undefined;
+      if (needsSearch(userInput)) {
+        const results = await webSearch(userInput);
+        if (!isActive()) return;
+        if (results) {
+          searchContext = `Aşağıdaki güncel web arama sonuçlarını kullanarak soruyu yanıtla:\n\n${results}`;
+        }
+      }
+
+      const enrichedContext = bargeInResult.prompt
+        ? searchContext
+          ? `${bargeInResult.prompt}\n\n---\n\n${searchContext}`
+          : bargeInResult.prompt
+        : searchContext;
+
+      let fullReply = "";
+      const sentenceQueue: string[] = [];
+      let isSpeaking = false;
+      let streamDone = false;
+
+      function speakNext() {
+        if (!isActive() || isSpeaking || sentenceQueue.length === 0) return;
+        const sentence = sentenceQueue.shift()!;
+        isSpeaking = true;
+        setModelStatus("speaking");
+        speak(sentence, () => {
+          if (!isActive()) return;
+          isSpeaking = false;
+          lastAssistantMessageRef.current = sentence;
+          if (sentenceQueue.length > 0) {
+            speakNext();
+          } else if (streamDone) {
+            setModelStatus("ready");
+          }
+        });
+      }
+
+      try {
+        fullReply = await streamOllama(
+          history,
+          (sentence) => {
+            if (!isActive()) return;
+            sentenceQueue.push(sentence);
+            speakNext();
+          },
+          llmAbortRef.current?.signal ?? new AbortController().signal,
+          enrichedContext
+        );
+
+        if (!isActive()) return;
+        conversationRef.current.push({ role: "assistant", content: fullReply });
+        saveMemory(conversationRef.current);
+        setLastResponse(fullReply);
+        lastAssistantMessageRef.current = fullReply;
+        streamDone = true;
+
+        if (!isSpeaking && sentenceQueue.length === 0) {
+          setModelStatus("ready");
+        }
+      } catch (err) {
+        if ((err as Error).name !== "AbortError" && isActive()) {
+          conversationRef.current.pop();
+          setModelStatus("ready");
+        }
+      }
+    },
+    [ollamaOnline]
+  );
 
   useEffect(() => {
     processInputRef.current = processInput;

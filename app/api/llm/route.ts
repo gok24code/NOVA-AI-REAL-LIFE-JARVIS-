@@ -37,9 +37,10 @@ function loadProfile(): string {
 }
 
 export async function POST(req: NextRequest) {
-  const { messages, context } = (await req.json()) as {
+  const { messages, context, bargeInPrompt } = (await req.json()) as {
     messages: { role: "user" | "assistant"; content: string }[];
     context?: string; // web arama sonuçları vs. ek bağlam
+    bargeInPrompt?: string;
   };
 
   if (!messages?.length) {
@@ -51,8 +52,15 @@ export async function POST(req: NextRequest) {
   const lessons = loadLessons();
 
   const blocks = [identity, profile, lessons].filter(Boolean);
-  const withMemory = blocks.join("\n\n---\n\n");
-  const systemContent = context ? `${withMemory}\n\n---\n\n${context}` : withMemory;
+  let systemContent = blocks.join("\n\n---\n\n");
+
+  if (bargeInPrompt) {
+    systemContent += `\n\n---\n\n${bargeInPrompt}`;
+  }
+
+  if (context) {
+    systemContent += `\n\n---\n\n${context}`;
+  }
 
   const ollamaMessages = [
     { role: "system", content: systemContent },
