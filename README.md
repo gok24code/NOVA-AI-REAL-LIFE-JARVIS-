@@ -26,6 +26,12 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 
 ## Özellikler
 
+**Son Güncellemeler (Sprint 3):**
+- **Intelligent Barge-In** 🎤: Nova konuşurken sesli kesme — Ollama embedding ile bağlamı koruyup doğal yanıt veriyor
+- **Self-Update** 📚: "şunu öğren" komutuyla kendi kendini uyarlayan bellek sistemi
+- **Kullanıcı Profili** 👤: İsim ve tercihler otomatik kaydediliyor, her cevap bağlamına uyuyor
+- **Plan → Onay → Çalıştırma** ✅: Proje üretiminde iki aşamalı güvenlik (salt-okunur plan sonra insan onayı)
+
 ### Görsel arayüz
 - Three.js orb sahnesi: Neural Core, bloom, chromatic aberration, scanline/grain/vignette
 - Sürükle-döndür, scroll/pinch ile zoom, momentum + friction ile inertia
@@ -40,14 +46,22 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
   (bkz. [Whisper.cpp kurulumu](#whispercpp-kurulumu-electron-sesli-komut-için))
 - Whisper halüsinasyonlarını (`[MÜZİK ÇALIYOR]`, `(Konuşma)`, `"..."` gibi) otomatik filtreler
 - Dinlemeye başlarken kısa bir "bing" sesi (Web Audio API, asset gerekmez)
+- **Intelligent Barge-in**: Nova konuşurken bile sesli kesme desteği — Ollama embedding ile 
+  konu sürekliliğini analiz edip konuşmaya doğal biçimde bağlantı kuruyor
 - "vazgeç" evrensel iptal komutu — açık olan her paneli/bekleyen seçimi kapatır
+- **Uyku modu komutları**: "sus" / "uyu" / "sessiz ol" — dinlemesi duraklatır
 
 ### LLM Beyni (Ollama)
-- `/api/llm` proxy route, streaming yanıt — cümle bitince TTS anlık başlar
+- `/api/llm` proxy route, streaming yanıt — **cümle bitince otomatik TTS başlar**
 - Sistem prompt: kimlik (`nova_identity.md`) + öğrenilen dersler (`nova_lessons.md`) + gerekirse web arama context'i
 - Konuşma geçmişi kalıcı (`lib/memory.ts`), her turda son 20 mesaj gönderilir
-- **"şunu öğren: ..."** / **"bunu not al: ..."** → davranışsal ders olarak kaydedilir
-- **"adım X"**, **"tercihimi kaydet: ..."** → yapılandırılmış profile (`nova_profile.json`)
+- **Self-Update (Öğrenilen Notlar)**:
+  - `"şunu öğren: ..."` / `"bunu not al: ..."` → davranışsal ders olarak `nova_lessons.md`'ye kaydediliyor
+  - Uykuya giderken arka planda otomatik ders çıkarım (sohbettan anlamlı dersleri filtreler)
+- **Kullanıcı Profili**:
+  - `"adım X"` / `"ismim X"` → kullanıcı adı kaydediliyor
+  - `"tercihimi kaydet: ..."` → tercih listesine ekleniyor (max 40)
+  - Profil her LLM çağrısında sistem promptuna otomatik dahil ediliyor
 - Ollama offline ise yerel regex/trigger tabanlı komut motoruna düşer
 
 ### TTS
@@ -62,8 +76,11 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 
 ### Otonom proje üretimi
 - "yeni proje" komutu/formu → Claude Code CLI'ı arka planda spawn ederek gerçek bir proje yazar
-- İki fazlı: önce salt-okunur **plan** (`--permission-mode plan`), onaylanırsa gerçek çalıştırma
-- SSE ile canlı log akışı, iş geçmişi, durdurma desteği
+- **Üç fazlı sistem** (Plan → Onay → Çalıştırma):
+  1. **Plan Fazı** (`--permission-mode plan`): Dosya sistemi dokunulmadan salt-okunur keşif, stack seçimi, dosya yapısı önizlemesi
+  2. **Onay Fazı**: Türkçe plan metni kullanıcıya gösteriliyor, **ONAYLA** veya **REDDET** seçeneği
+  3. **Çalıştırma Fazı** (`--permission-mode bypassPermissions`): Onay verilirse gerçek dosya yazma başlıyor
+- SSE ile canlı log akışı, iş geçmişi, durdurma desteği (tüm fazlarda)
 
 ### Diğer
 - Web arama (Tavily), YouTube video oynatma, harita (OpenStreetMap/Nominatim)
@@ -100,6 +117,10 @@ fallback davranışına döner.
 # LLM (Ollama)
 OLLAMA_URL=http://localhost:11434      # varsayılan
 OLLAMA_MODEL=llama3.1                  # kullanılacak model adı
+OLLAMA_EMBED_MODEL=nomic-embed-text    # semantic embedding modeli (barge-in için)
+
+# Barge-in sistemi
+NEXT_PUBLIC_ENABLE_SEMANTIC_CHECK=true  # Semantic benzerlik kontrolü aktif/pasif
 
 # Web arama
 TAVILY_API_KEY=
@@ -162,7 +183,7 @@ npm run electron:dist
 | Söylenecek | Ne olur |
 | --- | --- |
 | "nova" | Wake word — sonrasında komut dinler |
-| "sus" / "uyu" / "sessiz ol" | Uyku moduna geç |
+| "sus" / "uyu" / "sessiz ol" | Uyku moduna geç (konuşurken bile kesme yok) |
 | "vazgeç" | Açık olan her şeyi iptal et |
 | "[şarkı adı] çal" / "müzik aç" | YouTube'dan müzik ara ve çal |
 | "müziği durdur/devam ettir/kapat" | Müzik kontrolü |
@@ -170,11 +191,12 @@ npm run electron:dist
 | "nova, modelleri getir" | Sabit klasörden 3D modelleri yükle |
 | "sonraki/önceki model" | Yüklenen model listesinde gez |
 | "kamerayı aç" | Nesne tara → 3D model üret |
-| "yeni proje" | Otonom proje ajanını başlat |
+| "yeni proje" | Otonom proje ajanını başlat (plan → onay → çalıştırma) |
 | "[şehir] haritasını göster" | Harita aç |
 | "son dakika haberleri" | Direkt haber videosu aç |
-| "şunu öğren: ..." | Davranışsal ders olarak kaydet |
-| "adım X" | İsmi kaydet |
+| "şunu öğren: ..." / "bunu not al: ..." | Davranışsal ders olarak `nova_lessons.md`'ye kaydet |
+| "adım X" / "ismim X" | Kullanıcı adını `nova_profile.json`'a kaydet |
+| "tercihimi kaydet: ..." | Tercihler listesine ekle (max 40, otomatik dedupe) |
 
 ## El jestleri
 
@@ -187,9 +209,12 @@ Yukarıdaki [Özellikler](#özellikler) tablosuna bakın. Kamera açıkken sağ 
 
 ```
 app/api/                    Next.js API route'ları — tüm dış servisler buradan proxy'lenir
-  llm/                       Ollama proxy + status
+  llm/                       Ollama proxy + status + streaming TTS
+  embedding/                 Ollama nomic-embed-text semantic embedding (barge-in için)
   stt/                       whisper.cpp proxy (Electron sesli komut fallback'i)
   tts/                       msedge-tts proxy
+  profile/                   Kullanıcı profili (isim, tercihler)
+  self-update/               Öğrenilen notlar (nova_lessons.md)
   services/{search,geocode,thingiverse}/
   project/                   Otonom proje ajanı (plan → onay → çalıştırma)
   detect/ generate3d/        Kameradan 3D model üretimi
@@ -198,10 +223,12 @@ app/api/                    Next.js API route'ları — tüm dış servisler bur
 lib/
   useVoice.ts                Ana ses/LLM hook'u — komut motoru, TTS, sohbet akışı
   useAlwaysOn.ts              Arka plan wake-word döngüsü
+  intelligentBargeIn.ts       Barge-in sistemi: intent analiz + keyword + semantic benzerlik
   speechEngine.ts             Web Speech API ↔ Whisper fallback soyutlaması
   handTracker.ts              MediaPipe el takibi + jest tanıma
   orbScene.ts                  Three.js sahne
   projectAgent.ts              Claude Code CLI spawn/yönetim
+  memory.ts                    Konuşma geçmişi + kalıcı depolama
 
 electron/
   main.js                    Next.js server + whisper.cpp server'ı başlatan Electron kabuğu
@@ -296,6 +323,22 @@ olabilirsin; `-h` flag'iyle CLI'dan değil, uygulamanın kendisinin başlatması
 Uygulama artık wake-word dinlemeyi Ollama durum kontrolü tamamlanana kadar
 aktive etmiyor (`ollamaChecked` gate'i, `lib/useVoice.ts`). Hâlâ oluyorsa Ollama
 gerçekten çalışmıyor demektir — `ollama serve` ile başlat.
+
+### Intelligent Barge-In sınırlı veya çalışmıyor
+
+1. **Embedding modeli eksik**: `ollama pull nomic-embed-text` komutunu çalıştır (ilk kez ~100MB)
+2. **Semantic kontrol devre dışı**: `.env.local`'da `NEXT_PUBLIC_ENABLE_SEMANTIC_CHECK=true` olduğundan emin ol
+3. **Latency sorunu**: İlk embedding çağrısı yavaş olabilir (model cache'leniyor), sonrasında hızlı (in-memory cache)
+4. **Test etme**: Nova konuşurken "dur"/"kapat" diyerek kesme yap — barge-in dinleyicisi tetiklenmelidir
+
+**Barge-in nasıl çalışır?**
+- Konuşa başladığında `startBargeInListener()` açılıyor
+- Seçilen metin kaydedilince `intelligentBargeInHandler()` kutsalıyor:
+  - Mod komutu mu? (video, harita, müzik vb.) → direkt ele al
+  - Konu devamı mı? (keyword + semantic benzerlik) → doğal devam et
+  - Zayıf bağlantı mı? → bridge kur
+  - Başka konu mu? → temiz break yap
+- Sistem promptuna kontekst ekleniyor → Nova'nın cevabı bağlama uygun oluyor
 
 ---
 

@@ -28,7 +28,8 @@
       "PowerShell(Get-Process *)",
       "Bash(rm -rf release)",
       "Bash(mkdir -p /c/NovaReleaseTest)",
-      "PowerShell(Get-MpPreference *)"
+      "PowerShell(Get-MpPreference *)",
+      "Bash(\\\\.md\")"
     ]
   }
 }
