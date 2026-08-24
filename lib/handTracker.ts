@@ -64,6 +64,8 @@ export interface HandTrackerCallbacks {
   onPinchStart?(point: { x: number; y: number }): void;
   /** Fires once the instant a pinch releases. */
   onPinchEnd?(point: { x: number; y: number }): void;
+  /** Fist gesture (all fingers curled) — optional swipe direction from recent grab movement. */
+  onFist?(hand: "Left" | "Right", direction: "left" | "right" | undefined): void;
 }
 
 interface Point {

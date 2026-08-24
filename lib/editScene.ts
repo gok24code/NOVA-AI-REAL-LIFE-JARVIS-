@@ -1,8 +1,8 @@
 "use client";
 
 import * as THREE from "three";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 export interface EditSceneApi {
   dispose(): void;
@@ -402,7 +402,7 @@ export function createEditScene(container: HTMLElement): EditSceneApi {
           const root = gltf.scene;
           geometry = new THREE.BufferGeometry();
 
-          root.traverse((child) => {
+          root.traverse((child: THREE.Object3D) => {
             if ((child as any).isMesh) {
               const mesh = child as THREE.Mesh;
               if (!geometry.attributes.position) {

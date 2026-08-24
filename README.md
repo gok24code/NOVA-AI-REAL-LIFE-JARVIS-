@@ -2,7 +2,7 @@
 
 Three.js tabanlı holografik bir orb arayüzü etrafında kurulmuş, sesle kontrol edilen
 kişisel bir AI asistanı. Elle jest kontrolü, yerel LLM (Ollama), tamamen offline
-konuşma tanıma, otonom proje üretimi (Claude Code CLI), 3D model üretimi/bulma,
+konuşma tanıma, otonom proje üretimi (Claude Code CLI), 3D model üretimi/bulma/düzenleme,
 harita ve müzik gibi özellikleri tek bir arayüzde birleştiriyor. Hem tarayıcıda
 hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 
@@ -26,7 +26,12 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 
 ## Özellikler
 
-**Son Güncellemeler (Sprint 3):**
+**Son Güncellemeler:**
+- **Model Tasarım Modu (Edit Mode)** 🧩: Yüklenen 3D modelleri holografik bir çalışma
+  alanında seçip taşıyarak parçaları görsel olarak "montaj" haline getirme — bkz.
+  [3D model — düzenleme ve montaj](#3d-model--düzenleme-ve-montaj-edit-mode)
+- **Sahneyi anlatma**: "ne görüyorsun" / "ortamı anlat" — kameradan tespit edilen
+  nesneleri Türkçe cümleyle özetliyor
 - **Intelligent Barge-In** 🎤: Nova konuşurken sesli kesme — Ollama embedding ile bağlamı koruyup doğal yanıt veriyor
 - **Self-Update** 📚: "şunu öğren" komutuyla kendi kendini uyarlayan bellek sistemi
 - **Kullanıcı Profili** 👤: İsim ve tercihler otomatik kaydediliyor, her cevap bağlamına uyuyor
@@ -35,8 +40,8 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 ### Görsel arayüz
 - Three.js orb sahnesi: Neural Core, bloom, chromatic aberration, scanline/grain/vignette
 - Sürükle-döndür, scroll/pinch ile zoom, momentum + friction ile inertia
-- Panel açılışlarında holografik "materialize" animasyonu (proje formu, model tarayıcı, harita)
-- Tam ekran başlangıç (F11 ile aç/kapat, Esc ile çık)
+- Panel açılışlarında holografik "materialize" animasyonu (proje formu, model tarayıcı, harita, edit mode)
+- Tam ekran başlangıç (F11 ile aç/kapat, Esc ile çık — Esc ayrıca Edit Mode'dan da çıkar)
 
 ### Sesli komut sistemi
 - **Web Speech API** birincil motor (tarayıcıda) — Türkçe (`tr-TR`), wake word: **"nova"**
@@ -45,22 +50,26 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
   algılanıp yerel bir **whisper.cpp sunucusuna** düşülür — tamamen offline, API key gerekmez
   (bkz. [Whisper.cpp kurulumu](#whispercpp-kurulumu-electron-sesli-komut-için))
 - Whisper halüsinasyonlarını (`[MÜZİK ÇALIYOR]`, `(Konuşma)`, `"..."` gibi) otomatik filtreler
-- Dinlemeye başlarken kısa bir "bing" sesi (Web Audio API, asset gerekmez)
+- Dinlemeye başlarken kısa bir "bing" sesi (`lib/chime.ts`, Web Audio API ile sentezlenir, asset gerekmez)
 - **Intelligent Barge-in**: Nova konuşurken bile sesli kesme desteği — Ollama embedding ile 
   konu sürekliliğini analiz edip konuşmaya doğal biçimde bağlantı kuruyor
 - "vazgeç" evrensel iptal komutu — açık olan her paneli/bekleyen seçimi kapatır
-- **Uyku modu komutları**: "sus" / "uyu" / "sessiz ol" — dinlemesi duraklatır
+- **Uyku modu komutları**: "sus" / "uyu" / "sessiz ol" / "bekleme moduna geç" / "kapat" / "görüşürüz nova" / "bay bay nova"
+- Basit yardımcı komutlar (LLM veya internet gerektirmez): saat/tarih sorma, zoom in/out/reset
 
 ### LLM Beyni (Ollama)
 - `/api/llm` proxy route, streaming yanıt — **cümle bitince otomatik TTS başlar**
 - Sistem prompt: kimlik (`nova_identity.md`) + öğrenilen dersler (`nova_lessons.md`) + gerekirse web arama context'i
 - Konuşma geçmişi kalıcı (`lib/memory.ts`), her turda son 20 mesaj gönderilir
+- Yukarıdaki sabit komutların hiçbirine uymayan ama haber/fiyat/döviz/hava durumu/kimdir/
+  nedir/tarif/maç/deprem gibi geniş bir anahtar kelime setiyle eşleşen istekler otomatik
+  olarak Tavily web aramasıyla zenginleştirilip LLM'e context olarak veriliyor
 - **Self-Update (Öğrenilen Notlar)**:
-  - `"şunu öğren: ..."` / `"bunu not al: ..."` → davranışsal ders olarak `nova_lessons.md`'ye kaydediliyor
-  - Uykuya giderken arka planda otomatik ders çıkarım (sohbettan anlamlı dersleri filtreler)
+  - `"şunu öğren: ..."` / `"bunu not al: ..."` / `"bunu hatırla: ..."` → davranışsal ders olarak `nova_lessons.md`'ye kaydediliyor
+  - Uykuya giderken arka planda otomatik ders çıkarım (sohbetten anlamlı dersleri filtreler)
 - **Kullanıcı Profili**:
-  - `"adım X"` / `"ismim X"` → kullanıcı adı kaydediliyor
-  - `"tercihimi kaydet: ..."` → tercih listesine ekleniyor (max 40)
+  - `"adım X"` / `"ismim X"` / `"beni X olarak çağır/adlandır/hatırla"` → kullanıcı adı kaydediliyor
+  - `"tercihimi kaydet: ..."` / `"bunu tercih olarak kaydet: ..."` → tercih listesine ekleniyor (max 40)
   - Profil her LLM çağrısında sistem promptuna otomatik dahil ediliyor
 - Ollama offline ise yerel regex/trigger tabanlı komut motoruna düşer
 
@@ -69,10 +78,54 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 - Pitch/rate/volume ayarlı ("karizmatik" ton), sayılar Türkçe kelimeye çevrilir
 
 ### 3D model — bulma ve üretme
-- Thingiverse'de arama, sesli **"birinci/ikinci/üçüncü"** ile seçim ve otomatik indirme
-- Kameradan nesne tespiti (offline, `@xenova/transformers`) → Meshy API ile 3D model üretimi → STL kaydı
-- **"nova, modelleri getir"** → masaüstündeki `models` klasörünü (veya `NOVA_MODELS_DIR`) dialogsuz yükler (Electron)
+- Thingiverse'de arama (`"[X] modelini/kılıfını/parçasını bul/indir/ara"`), sesli
+  **"birinci/ikinci/üçüncü"** ile seçim ve otomatik indirme
+- Belirli bir modeli adıyla yükleme: **"[X] modelini yükle/göster/aç"** — Thingiverse
+  aramasından ayrı, yerel kütüphanede doğrudan isimle model açan farklı bir komut yolu
+- Kameradan nesne tespiti (offline, `@xenova/transformers` DETR-ResNet-50, `/api/detect`)
+  → Meshy API ile 3D model üretimi → STL kaydı
+- **Sahneyi anlatma**: kamera açıkken **"ne görüyorsun" / "ne var orada" / "etrafı anlat" /
+  "ortamı anlat"** dendiğinde aynı DETR modeli düşük eşikli bir `describe` modunda
+  çalışıp gördüğü nesneleri ("Sahnede sandalye, masa ve laptop görüyorum." gibi) Türkçe
+  bir cümleyle özetliyor ve sesli okuyor
+- **"nova, modelleri getir"** → masaüstündeki `models` klasörünü (veya `NOVA_MODELS_DIR`)
+  dialogsuz yükler (Electron) — Meshy'nin ürettiği STL'ler de **aynı klasöre** kaydedilir,
+  yani manuel yerleştirilen ve otomatik üretilen modeller tek bir yerel kütüphanede birleşiyor
 - Yerelden klasör seçme (tarayıcıda dosya seçici, Electron'da native dialog)
+- "sonraki/önceki model" ile yüklenen model listesinde gezinme, "modeli kaldır/kapat/temizle" ile sahneden çıkarma
+
+### 3D model — düzenleme ve montaj (Edit Mode)
+Birden fazla ayrı model dosyasını (ör. çok parçalı bir baskı, taranmış farklı nesneler)
+görsel olarak birbirine göre konumlandırıp tek bir "montaj" olarak birleştirmeyi sağlayan,
+tamamen jest/mouse tabanlı bir çalışma modu.
+
+- **Açma:** Sağ alttaki HUD'da "JESTLER" butonunun yanındaki **EDIT MODE** butonuna tıkla
+  (sesli komutla açılmıyor — bilinçli bir tasarım tercihi, bkz. `components/JarvisOrb.tsx`).
+  `Esc` veya butona tekrar tıklamak modu kapatır.
+- **Ön koşul:** Edit Mode'a girmeden önce en az bir model yüklenmiş olmalı (Thingiverse,
+  kamera taraması veya "modelleri getir" ile).
+- Açılınca tüm yüklü modeller, ayrı ve şeffaf arka planlı bir Three.js sahnesinde
+  (`lib/editScene.ts`) camgöbeği renkli (`#06b6d4`) holografik tel kafes + yarı saydam
+  gövde olarak, merkezdeki görünmez bir "montaj küresi" etrafında dairesel olarak
+  otomatik diziliyor (`arrangeRadial`).
+- **Seçim:** Bir modele tıklamak (mouse veya el pinch-başlangıcı ile raycast) onu seçili
+  hale getirir ve rengini amber'a (`#fbbf24`) çevirir; merkezdeki küreye tıklamak ise onu
+  "tüm montajı birlikte döndürme" kolu olarak seçer.
+- **Hareket ettirme** (tamamen el jesti veya mouse ile — bkz. [El jestleri](#el-jestleri)):
+  serbest el hareketi seçimi döndürür, tek el pinch + hareket sürükler, iki el pinch
+  zoom yapar, üç parmak açık küçük bir eğim darbesi verir. Mouse ile sürüklemek de aynı
+  şekilde çalışır (tarayıcı/Electron fark etmez).
+- **TransformPanel** (üst sağ, en az bir model seçiliyken görünür): **ODAKLAN** kamerayı
+  seçime kilitler, **SİL** seçili model(ler)i sahneden kaldırır.
+- **EditModeUI** (üst sol): toplam model sayısı, seçili sayısı, üzerine gelinen modelin adı
+  ve jest ipuçları burada gösterilir.
+- **Montaj tespiti:** Bir modeli sürükleyip merkezdeki küreye yeterince yaklaştırmak onu
+  otomatik olarak "montajlanmış" işaretler ve yeşile (`#22c55e`) boyar.
+- **Çıkış:** Edit Mode kapatıldığında (buton veya Esc), o an "montajlanmış" işaretli tüm
+  parçaların geometrisi + konumu + rotasyonu alınıp ana orb sahnesine tek, birleşik,
+  çok parçalı bir holografik obje olarak yükleniyor (`loadAssembly`) — yani Edit Mode'da
+  görsel olarak bir araya getirdiğin parçaları ana ekranda tek bir "monte edilmiş" nesne
+  gibi inceleyebiliyorsun.
 
 ### Otonom proje üretimi
 - "yeni proje" komutu/formu → Claude Code CLI'ı arka planda spawn ederek gerçek bir proje yazar
@@ -86,8 +139,14 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 - Web arama (Tavily), YouTube video oynatma, harita (OpenStreetMap/Nominatim)
 - **YouTube müzik çalma** — küçük widget, ekolayzer animasyonu
 - Son dakika haberi isteğinde direkt video açılır (seçenek sorulmaz)
+- Saat/tarih sorma — tamamen yerel, LLM veya internet gerektirmez
+- Sağ orta metrikler paneli (`DataPanels.tsx`) şu an **mock veriyle** çalışıyor
+  (gerçek CPU/RAM/network metriklerine henüz bağlanmadı)
 
 ### El jestleri (webcam)
+
+Ana görünümde:
+
 | Jest | Etki |
 | --- | --- |
 | Tek el pinch (baş+işaret parmak) + sürükle | Orb'u döndür |
@@ -95,6 +154,17 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 | Üç parmak açık (herhangi bir el) | Müziği duraklat/devam ettir |
 | Sağ el yumruk | Önceki şarkı |
 | Sol el yumruk | Sonraki şarkı |
+
+Edit Mode açıkken (yukarıdaki [3D model — düzenleme ve montaj](#3d-model--düzenleme-ve-montaj-edit-mode)
+bölümüne bakın), aynı el takip altyapısı farklı bir anlam kazanıyor:
+
+| Jest / girdi | Etki (Edit Mode içinde) |
+| --- | --- |
+| Serbest el hareketi (pinch yok) | Seçili model(ler)i veya merkez küreyi (tüm montajı) döndür |
+| Tek el pinch + hareket | Seçimi kamera düzleminde sürükle |
+| İki el pinch + uzaklaş/yakınlaş | Edit Mode kamerasında zoom |
+| Üç parmak açık | Seçime küçük bir eğim (pitch) darbesi ver |
+| Mouse tıkla / sürükle | Model seç / sürükle (klavye-fare ile de tam kontrol) |
 
 ---
 
@@ -136,7 +206,8 @@ THINGIVERSE_API_KEY=
 
 # Electron + whisper.cpp fallback STT (bkz. Sorun giderme)
 WHISPER_SERVER_URL=http://127.0.0.1:8081/inference   # Next.js tarafı proxy hedefi
-NOVA_MODELS_DIR=                                       # "modelleri getir" için sabit klasör (varsayılan: Masaüstü\models)
+NOVA_MODELS_DIR=                                       # Yerel model kütüphanesi klasörü — "modelleri getir" ve
+                                                        # Meshy'den kaydedilen STL'ler burada birleşir (varsayılan: Masaüstü\models)
 ```
 
 `.env.local` `.gitignore`'da — API key'ler asla client'a açılmaz, hepsi server-side proxy route'ları üzerinden geçer.
@@ -183,52 +254,97 @@ npm run electron:dist
 | Söylenecek | Ne olur |
 | --- | --- |
 | "nova" | Wake word — sonrasında komut dinler |
-| "sus" / "uyu" / "sessiz ol" | Uyku moduna geç (konuşurken bile kesme yok) |
+| "sus" / "uyu" / "sessiz ol" / "bekleme moduna geç" / "kapat" / "görüşürüz nova" / "bay bay nova" | Uyku moduna geç (konuşurken bile kesme yok) |
 | "vazgeç" | Açık olan her şeyi iptal et |
-| "[şarkı adı] çal" / "müzik aç" | YouTube'dan müzik ara ve çal |
-| "müziği durdur/devam ettir/kapat" | Müzik kontrolü |
-| "[model adı] modelini bul/indir" | Thingiverse'de ara, "birinci/ikinci/üçüncü" ile seç |
-| "nova, modelleri getir" | Sabit klasörden 3D modelleri yükle |
+| "yaklaştır" / "büyüt" / "zoom yap" | Orb'a zoom in |
+| "uzaklaştır" / "küçült" / "zoom out" | Orb'dan zoom out |
+| "sıfırla" / "resetle" / "başa dön" | Orb kamerasını sıfırla |
+| "saat kaç" | Saati Türkçe kelimeyle söyle |
+| "tarih" / "bugün" / "hangi gün" | Bugünün tarihini söyle |
+| "[şarkı adı] çal" / "müzik aç" / "çalar mısın" | YouTube'dan müzik ara ve çal |
+| "müziği durdur/duraklat" / "müziğe devam et" / "müziği kapat" | Müzik kontrolü |
+| "[X] videosunu aç/oynat" / "youtube'dan X" / "X izle" | YouTube'da video aç |
+| "[model adı] modelini/kılıfını/parçasını bul/indir/ara" | Thingiverse'de ara, "birinci/ikinci/üçüncü" ile seç |
+| "[model adı] modelini yükle/göster/aç" | Yerel kütüphaneden ismiyle doğrudan model aç |
+| "nova, modelleri getir" / "model klasörü" | Sabit klasörden (`NOVA_MODELS_DIR`) 3D modelleri toplu yükle |
 | "sonraki/önceki model" | Yüklenen model listesinde gez |
-| "kamerayı aç" | Nesne tara → 3D model üret |
-| "yeni proje" | Otonom proje ajanını başlat (plan → onay → çalıştırma) |
+| "modeli kaldır/kapat/temizle" | Aktif modeli sahneden çıkar |
+| "kamerayı aç" / "nesne tara" | Nesne tara → 3D model üret |
+| "kamerayı kapat" / "taramayı kapat" | Kamerayı kapat |
+| "ne görüyorsun" / "ne var orada" / "etrafı anlat" / "ortamı anlat" | Kameradaki sahneyi Türkçe cümleyle özetle |
+| "yeni proje" / "proje oluştur" | Otonom proje ajanını başlat (plan → onay → çalıştırma) |
+| "proje formunu kapat" | Açık proje formunu iptal et |
 | "[şehir] haritasını göster" | Harita aç |
-| "son dakika haberleri" | Direkt haber videosu aç |
-| "şunu öğren: ..." / "bunu not al: ..." | Davranışsal ders olarak `nova_lessons.md`'ye kaydet |
-| "adım X" / "ismim X" | Kullanıcı adını `nova_profile.json`'a kaydet |
-| "tercihimi kaydet: ..." | Tercihler listesine ekle (max 40, otomatik dedupe) |
+| "haritayı kapat" / "haritayı gizle" | Haritayı kapat |
+| "son dakika haberleri" / "güncel haber" | Direkt haber videosu aç |
+| "şunu öğren: ..." / "bunu not al: ..." / "bunu hatırla: ..." | Davranışsal ders olarak `nova_lessons.md`'ye kaydet |
+| "adım X" / "ismim X" / "beni X olarak çağır/adlandır" | Kullanıcı adını `nova_profile.json`'a kaydet |
+| "tercihimi kaydet: ..." / "bunu tercih olarak kaydet: ..." | Tercihler listesine ekle (max 40, otomatik dedupe) |
+
+> **Not:** Yukarıdakilerin hiçbiri Edit Mode'u açmaz — o, HUD'daki **EDIT MODE** butonuyla
+> açılan, bilinçli olarak sesle değil elle/mouse ile kontrol edilen ayrı bir moddur (bkz.
+> [3D model — düzenleme ve montaj](#3d-model--düzenleme-ve-montaj-edit-mode)). Yukarıdaki
+> tabloda yer almayan, haber/fiyat/döviz/hava durumu/"kimdir"/"nedir" gibi doğal dil
+> soruları da otomatik olarak Tavily web aramasıyla zenginleştirilip Ollama'ya yönlendirilir.
 
 ## El jestleri
 
-Yukarıdaki [Özellikler](#özellikler) tablosuna bakın. Kamera açıkken sağ alttaki
-"JESTLER" butonuyla açıp kapatabilirsiniz.
+Yukarıdaki [Özellikler](#özellikler) bölümündeki iki ayrı tabloya bakın: biri ana
+görünüm için, diğeri Edit Mode içindeyken aynı jestlerin farklı anlamları için. Kamera
+açıkken sağ alttaki "JESTLER" butonuyla el takibini açıp kapatabilirsiniz.
 
 ---
 
 ## Mimari
 
 ```
-app/api/                    Next.js API route'ları — tüm dış servisler buradan proxy'lenir
-  llm/                       Ollama proxy + status + streaming TTS
-  embedding/                 Ollama nomic-embed-text semantic embedding (barge-in için)
-  stt/                       whisper.cpp proxy (Electron sesli komut fallback'i)
-  tts/                       msedge-tts proxy
-  profile/                   Kullanıcı profili (isim, tercihler)
-  self-update/               Öğrenilen notlar (nova_lessons.md)
-  services/{search,geocode,thingiverse}/
-  project/                   Otonom proje ajanı (plan → onay → çalıştırma)
-  detect/ generate3d/        Kameradan 3D model üretimi
-  youtube/                   Video + müzik arama
+app/
+  page.tsx                   Sadece <NovaOrb /> (=JarvisOrb.tsx) ve <DataPanels />'i render eder —
+                              diğer tüm paneller (ObjectScanner, ProjectForm, ModelBrowser, MapView,
+                              MusicPlayer, VideoOverlay, EditModeUI, TransformPanel) JarvisOrb.tsx
+                              içinde şarta bağlı olarak mount edilir
+  api/                        Next.js API route'ları — tüm dış servisler buradan proxy'lenir
+    llm/                       Ollama proxy + status + streaming TTS
+    embedding/                 Ollama nomic-embed-text semantic embedding (barge-in için)
+    stt/                       whisper.cpp proxy (Electron sesli komut fallback'i)
+    tts/                       msedge-tts proxy
+    profile/                   Kullanıcı profili (isim, tercihler)
+    self-update/               Öğrenilen notlar (nova_lessons.md)
+    services/{search,geocode,thingiverse}/
+    project/                   Otonom proje ajanı (plan → onay → çalıştırma)
+    detect/                     Kameradan nesne tespiti — `mode: "detect"` (Meshy için) ve
+                                 `mode: "describe"` (sahneyi Türkçe anlatma) ikisini de sunar
+    generate3d/                 Meshy ile 3D model üretimi + polling
+    generate3d/save/            Üretilen STL'i yerel model klasörüne kaydet (`lib/modelsStore.ts`,
+                                 sadece meshy.ai host'una izin veren SSRF koruması var)
+    models/[fileName]/          Yerel model klasöründen dosya sunan GET route (stl/glb/gltf/obj)
+    slicer/                     Modeli indirip Creality Print/Slicer'da açar
+    youtube/                    Video + müzik arama
 
 lib/
   useVoice.ts                Ana ses/LLM hook'u — komut motoru, TTS, sohbet akışı
   useAlwaysOn.ts              Arka plan wake-word döngüsü
   intelligentBargeIn.ts       Barge-in sistemi: intent analiz + keyword + semantic benzerlik
   speechEngine.ts             Web Speech API ↔ Whisper fallback soyutlaması
-  handTracker.ts              MediaPipe el takibi + jest tanıma
-  orbScene.ts                  Three.js sahne
+  chime.ts                    Dinleme başlangıcı "bing" sesi (Web Audio API, sentezlenmiş)
+  handTracker.ts              MediaPipe el takibi + jest tanıma (ana görünüm ve Edit Mode ikisinde de kullanılır)
+  orbScene.ts                  Three.js ana sahne — normal orb görünümü + Edit Mode'dan gelen montajları (`loadAssembly`) gösterir
+  editScene.ts                 Edit Mode için ayrı Three.js sahnesi: model seçme, sürükleme, döndürme,
+                                dairesel dizilim, montaj küresi tespiti
+  useEditMode.ts               editScene.ts'i React'e bağlayan hook (seçim/model sayısı state'i, EditModeUI/TransformPanel'i besler)
+  useModelLibrary.ts           Yüklenen model dosyalarının listesi/state yönetimi
+  useObjectDetector.ts         `/api/detect` çağrısını saran hook (hem tespit hem sahne betimleme modu)
+  modelsStore.ts               Sunucu tarafı: yerel model klasörünü (NOVA_MODELS_DIR) okuma/yazma, Türkçe dosya adı slugify
   projectAgent.ts              Claude Code CLI spawn/yönetim
   memory.ts                    Konuşma geçmişi + kalıcı depolama
+
+components/
+  JarvisOrb.tsx                Uygulamanın ana bileşeni — orb sahnesi, el takibi, ses hook'u, model
+                                kütüphanesi, nesne tespiti, Edit Mode ve tüm overlay panellerinin bağlandığı yer
+  EditModeUI.tsx                Edit Mode üst-sol istatistik paneli (model/seçim sayısı, jest ipuçları)
+  TransformPanel.tsx            Edit Mode üst-sağ panel (ODAKLAN / SİL), seçim varken görünür
+  ObjectScanner.tsx, ProjectForm.tsx, ModelBrowser.tsx, MapView.tsx, MusicPlayer.tsx,
+  VideoOverlay.tsx, VideoPanel.tsx, DataPanels.tsx  (DataPanels şu an mock veri kullanıyor)
 
 electron/
   main.js                    Next.js server + whisper.cpp server'ı başlatan Electron kabuğu

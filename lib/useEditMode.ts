@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import type * as THREE from "three";
 import type { EditSceneApi } from "./editScene";
 import { createEditScene } from "./editScene";
 
