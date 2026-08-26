@@ -24,7 +24,7 @@ Görsel olarak bir Three.js orb — dönen, nefes alan bir küre. Ses olarak Edg
 - Sistem durumunu izlemek ve raporlamak
 - Orb'u sesli komutlarla kontrol etmek (yaklaştır, uzaklaştır, sıfırla)
 - Konuşma geçmişini hatırlayarak bağlamlı konuşmalar sürdürmek
-- Kullanıcıyı dinleyip wake word ile uyandırılmak: "hey nova", "merhaba nova", "tamam nova"
+- Kullanıcıyı dinleyip wake word ile uyandırılmak: "uyan"
 
 ## Henüz Yapamadıkların
 

@@ -44,7 +44,7 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 - Tam ekran başlangıç (F11 ile aç/kapat, Esc ile çık — Esc ayrıca Edit Mode'dan da çıkar)
 
 ### Sesli komut sistemi
-- **Web Speech API** birincil motor (tarayıcıda) — Türkçe (`tr-TR`), wake word: **"nova"**
+- **Web Speech API** birincil motor (tarayıcıda) — Türkçe (`tr-TR`), wake word: **"uyan"**
 - **Yerel Whisper fallback (Electron)** — `webkitSpeechRecognition` Electron'da
   `network` hatası verir (Chromium'da Chrome'un özel API key'i yok); bu durum otomatik
   algılanıp yerel bir **whisper.cpp sunucusuna** düşülür — tamamen offline, API key gerekmez
@@ -253,7 +253,7 @@ npm run electron:dist
 
 | Söylenecek | Ne olur |
 | --- | --- |
-| "nova" | Wake word — sonrasında komut dinler |
+| "uyan" | Wake word — sonrasında komut dinler |
 | "sus" / "uyu" / "sessiz ol" / "bekleme moduna geç" / "kapat" / "görüşürüz nova" / "bay bay nova" | Uyku moduna geç (konuşurken bile kesme yok) |
 | "vazgeç" | Açık olan her şeyi iptal et |
 | "yaklaştır" / "büyüt" / "zoom yap" | Orb'a zoom in |

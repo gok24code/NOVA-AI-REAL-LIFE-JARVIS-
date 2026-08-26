@@ -6,6 +6,7 @@ import { tmpdir } from "os";
 const HUMAN_LABELS = new Set(["person"]);
 
 const COCO_TR: Record<string, string> = {
+  person: "bir kişi",
   bicycle: "bisiklet",
   car: "araba",
   motorcycle: "motosiklet",
@@ -105,7 +106,7 @@ async function getDetector(): Promise<any> {
   _loadingPromise = (async () => {
     const { pipeline } = await import("@xenova/transformers");
     _detector = await pipeline("object-detection", "Xenova/detr-resnet-50", {
-      quantized: true,
+      quantized: false,
     });
     return _detector;
   })();
@@ -161,11 +162,12 @@ export async function POST(req: NextRequest) {
     const best = filtered[0] as { label: string; score: number };
     const objectName = tr(best.label);
     const extras = filtered.slice(1, 3).map((r: { label: string }) => tr(r.label));
+    const verb = best.score >= 0.75 ? "net şekilde tespit edildi" : "tespit edildi gibi görünüyor";
 
     const description =
       extras.length > 0
-        ? `${objectName} tespit edildi. Ayrıca ${extras.join(", ")} görünüyor. 3D baskıya uygun belirgin form.`
-        : `${objectName} tespit edildi. Belirgin formu var, 3D baskıya uygun.`;
+        ? `${objectName} ${verb}. Ayrıca ${extras.join(", ")} görünüyor. 3D baskıya uygun belirgin form.`
+        : `${objectName} ${verb}. Belirgin formu var, 3D baskıya uygun.`;
 
     return Response.json({ found: true, object: objectName, description });
   } catch (err) {

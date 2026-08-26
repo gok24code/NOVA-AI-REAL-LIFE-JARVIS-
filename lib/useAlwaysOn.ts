@@ -6,7 +6,7 @@ import { canListen, startListen, type ListenHandle } from "./speechEngine";
 
 export type WakeStatus = "off" | "background" | "activated";
 
-const WAKE_WORDS       = ["nova"];
+const WAKE_WORDS       = ["uyan"];
 const RESTART_DELAY_MS = 150;
 const WATCHDOG_MS      = 2500; // activated modda hiçbir şey olmuyorsa zorla restart
 

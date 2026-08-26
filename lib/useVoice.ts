@@ -523,8 +523,15 @@ function matchLocalCommand(input: string): CommandDef | null {
 // ─── ELEVENLABS SPEAK ────────────────────────────────────────────────────────
 
 let activeAudio: HTMLAudioElement | null = null;
+// TTS istekleri ağ üzerinden asenkron dönüyor — art arda gelen iki speak() çağrısında
+// ikincisi başladığında birincisinin fetch'i hâlâ bekliyor olabilir, bu yüzden
+// cancelSpeech() henüz iptal edecek bir şey bulamıyor ve ikisi de sonradan çalmaya
+// başlayıp üst üste biniyordu. Token, "en son başlatılan speak() hangisi" bilgisini
+// tutarak eski (geçersiz kılınmış) bir isteğin sesi hiç çalmamasını garanti eder.
+let speakToken = 0;
 
 function cancelSpeech() {
+  speakToken++;
   if (activeAudio) {
     activeAudio.pause();
     activeAudio.src = "";
@@ -534,6 +541,7 @@ function cancelSpeech() {
 
 function speak(text: string, onEnd?: () => void): void {
   cancelSpeech();
+  const myToken = speakToken;
   const clean = normalizeForTTS(text.trim());
   if (!clean) { onEnd?.(); return; }
 
@@ -547,6 +555,7 @@ function speak(text: string, onEnd?: () => void): void {
       return res.blob();
     })
     .then((blob) => {
+      if (myToken !== speakToken) { onEnd?.(); return; } // daha yeni bir speak() bunu geçersiz kıldı
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       activeAudio = audio;

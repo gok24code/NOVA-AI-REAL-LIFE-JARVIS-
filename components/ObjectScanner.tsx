@@ -125,8 +125,8 @@ const ObjectScanner = forwardRef<ObjectScannerHandle, ScannerProps>(function Obj
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
-          width: { ideal: 640 },
-          height: { ideal: 480 },
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
         },
       });
       streamRef.current = stream;
@@ -153,7 +153,7 @@ const ObjectScanner = forwardRef<ObjectScannerHandle, ScannerProps>(function Obj
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
     const imageBase64 = dataUrl.split(",")[1];
     return { imageBase64, mimeType: "image/jpeg" };
   }
@@ -167,7 +167,7 @@ const ObjectScanner = forwardRef<ObjectScannerHandle, ScannerProps>(function Obj
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
 
     setStage("detecting");
     const result = await detect(dataUrl);
