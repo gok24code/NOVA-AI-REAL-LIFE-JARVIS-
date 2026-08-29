@@ -113,7 +113,7 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   const C_MID    = 0x0891b2; // cyan-600
   const C_DIM    = 0x164e63; // cyan-900
   const C_FAINT  = 0x083344; // very dark cyan
-  const C_HOT    = 0x3b82f6; // blue-500
+  const C_HOT    = 0x5eead4; // teal-300 (gri-turkuaz tema — eskiden blue-500 0x3b82f6'ydı)
 
   // ——— ORB ROOT ———
   const orbGroup = new THREE.Group();

@@ -325,9 +325,12 @@ async function classifyAction(text: string, systemStatus: string): Promise<{ act
           {
             role: "user",
             content:
-              `Kullanıcı şunu söyledi: "${text}"\n` +
+              `Kullanıcı sesli asistana şunu söyledi: "${text}"\n` +
               `Şu an sistemde: ${systemStatus}\n\n` +
-              `Kullanıcı bu kelimeleri hiç kullanmasa bile, aşağıdaki eylemlerden birini KASTETMİŞ olabilir mi?\n${actionList}\n\n` +
+              `Kullanıcı şu eylemlerden birini kastetmiş olabilir (kelimeleri birebir kullanmasa bile):\n${actionList}\n\n` +
+              `Özellikle: kullanıcı bir sanatçı/grup/şarkı adı söyleyip bunu "aç", "çal", "dinlet", "başlat" gibi bir ` +
+              `fiille kullanıyorsa (ör. "ACDC aç", "Tarkan çal") bu KESİNLİKLE play_music'tir — sanatçı adını tanımana ` +
+              `gerek yok, doğrudan play_music(söylenen isim) yaz.\n\n` +
               `Eminsen SADECE şu formatta tek satır yaz: eylem_adı(argüman) — argüman gerekmiyorsa eylem_adı()\n` +
               `Emin değilsen, bu sadece normal bir sohbet cümlesiyse, ya da zaten sistemde o durum aktifse (ör. müzik zaten çalıyorsa play_music tekrar yazma) SADECE "YOK" yaz. Başka hiçbir şey yazma, açıklama yapma.`,
           },

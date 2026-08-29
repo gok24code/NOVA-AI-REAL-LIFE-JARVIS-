@@ -654,7 +654,7 @@ export default function NovaOrb() {
             <span style={{ color: "#06b6d4" }}>◉ DİNLİYOR…</span>
           )}
           {voice.modelStatus === "thinking" && <span style={{ color: "#f59e0b" }}>⟳ DÜŞÜNÜYOR…</span>}
-          {voice.modelStatus === "speaking" && <span style={{ color: "#3b82f6" }}>▶ KONUŞUYOR…</span>}
+          {voice.modelStatus === "speaking" && <span style={{ color: "#5eead4" }}>▶ KONUŞUYOR…</span>}
           <span style={{ marginLeft: 8, color: voice.ollamaOnline ? "#22c55e" : "#6b7280" }}>
             {voice.ollamaOnline ? "◆ LLM" : "◇ LLM"}
           </span>
