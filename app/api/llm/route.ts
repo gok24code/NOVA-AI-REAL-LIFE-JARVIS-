@@ -76,7 +76,23 @@ export async function POST(req: NextRequest) {
         model: OLLAMA_MODEL,
         messages: ollamaMessages,
         stream: true,
-        options: { num_predict: 150 },
+        // qwen3 gibi "hybrid reasoning" modeller varsayılan olarak yanıttan önce
+        // gizli bir <think> bloğu üretir — bu blok num_predict bütçesini tek
+        // başına tüketip hiç görünür cevap üretilmeden kesilmesine yol açabiliyor
+        // (test: 150 token tamamen thinking'e gitti, content boş kaldı) ve GPU'yu
+        // gereksiz yere çok daha uzun süre meşgul ediyor. Sesli asistanda anlık
+        // yanıt gerektiği için kapatıyoruz. Bu alanı tanımayan modeller (llama3.1,
+        // qwen2.5 vb.) için sessizce yok sayılıyor.
+        think: false,
+        options: {
+          num_predict: 150,
+          // Ollama bazı modellerde (qwen3 gibi) context'i modelin desteklediği
+          // maksimuma (40960) kadar açıp KV cache'i şişiriyor, bu da 8GB VRAM'i
+          // aşıp modelin kısmen CPU'ya taşmasına (yavaşlama + yüksek fan sesi)
+          // yol açıyordu. Konuşma geçmişi zaten son 20 mesajla sınırlı
+          // (useVoice.ts), 8192 fazlasıyla yeterli ve modeli tamamen GPU'da tutuyor.
+          num_ctx: 8192,
+        },
       }),
     });
   } catch {

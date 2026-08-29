@@ -33,6 +33,7 @@ CLAUDE.md
 
 # self-update lessons — kişisel/öğrenilmiş notlar, public repoya gitmemeli
 nova_lessons.md
+nova_preferences.json
 
 # yapılandırılmış kullanıcı profili (isim, tercihler) — kişisel veri
 nova_profile.json

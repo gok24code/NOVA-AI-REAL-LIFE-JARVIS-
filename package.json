@@ -35,7 +35,8 @@
       "nova_identity.md",
       ".env.local",
       "nova_lessons.md",
-      "nova_profile.json"
+      "nova_profile.json",
+      "nova_preferences.json"
     ],
     "win": {
       "target": "portable"

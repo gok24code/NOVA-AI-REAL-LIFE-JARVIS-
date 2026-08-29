@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { loadMemory, saveMemory, type Message } from "./memory";
 import { canListen, startListen, type ListenHandle } from "./speechEngine";
 import { playListenChime } from "./chime";
+import { NOVA_ACTION_DESCRIPTIONS, CLASSIFIABLE_ACTION_KEYS, type NovaActionKey, type ClassifiableActionKey } from "./novaActions";
 
 import {
   type BargeInContext,
@@ -25,8 +26,8 @@ export type OrbIntent = "zoom_in" | "zoom_out" | "reset" | "sleep"
   | "pick_folder" | "next_model" | "prev_model" | "clear_model"
   | "open_scanner" | "close_scanner" | "describe_scene"
   | "open_project_form" | "close_project_form"
-  | "select_model_1" | "select_model_2" | "select_model_3"
-  | "cancel" | "close_map" | "pause_music" | "resume_music" | "close_music";
+  | "select_model_1" | "select_model_2" | "select_model_3" | "select_model_4" | "select_model_5"
+  | "cancel" | "close_map" | "pause_music" | "resume_music" | "close_music" | "stop_all";
 
 export interface VoiceResult {
   modelStatus: ModelStatus;
@@ -39,6 +40,7 @@ export interface VoiceResult {
   stopListening: () => void;
   sendText: (text: string) => void;
   speakText: (text: string) => void;
+  narrateAndSpeak: (actionKey: NovaActionKey, detail: string) => void;
 }
 
 // ─── SAYI → TÜRKÇE ───────────────────────────────────────────────────────────
@@ -152,7 +154,47 @@ async function saveLesson(lesson: string): Promise<void> {
   }
 }
 
-// Sohbet geçmişinden tek cümlelik bir ders çıkarmayı dener (arka planda, sessizce)
+// Şu ana kadar öğrenilen dersleri getirir (dedupe kontrolü için)
+async function fetchExistingLessons(): Promise<string[]> {
+  try {
+    const res = await fetch("/api/self-update");
+    if (!res.ok) return [];
+    const data = (await res.json()) as { lessons?: string[] };
+    return data.lessons ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// /api/llm'den dönen ndjson stream'ini tek bir metne biriktirir (tek seferlik,
+// arka plan çağrıları için — konuşurken cümle cümle konuşulmasına gerek yok)
+async function collectOllamaText(res: Response): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const json = JSON.parse(line) as { message?: { content?: string } };
+        fullText += json.message?.content ?? "";
+      } catch { /* malformed line */ }
+    }
+  }
+  return fullText.trim();
+}
+
+// Sohbet geçmişinden tek cümlelik bir ders çıkarmayı dener (arka planda, sessizce).
+// Sadece açıkça söylenen bilgiyi değil, örtük tercihleri, düzeltmeleri ve tekrar eden
+// davranış kalıplarını da yakalamaya çalışır. Zaten bilinen bir şeyi tekrar kaydetmemesi
+// için mevcut notları prompt'a dahil eder.
 async function distillLesson(history: Message[]): Promise<void> {
   if (history.length < 4) return;
   try {
@@ -160,6 +202,10 @@ async function distillLesson(history: Message[]): Promise<void> {
       .slice(-12)
       .map((m) => `${m.role === "user" ? "Kullanıcı" : "NOVA"}: ${m.content}`)
       .join("\n");
+    const existing = await fetchExistingLessons();
+    const knownBlock = existing.length
+      ? `\n\nZaten bilinenler (bunları veya anlamca aynı olan bir şeyi tekrar çıkarma):\n${existing.map((l) => `- ${l}`).join("\n")}`
+      : "";
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
     const res = await fetch("/api/llm", {
@@ -170,8 +216,12 @@ async function distillLesson(history: Message[]): Promise<void> {
           {
             role: "user",
             content:
-              `Aşağıdaki konuşmadan, kullanıcı hakkında veya ona nasıl daha iyi yardımcı olabileceğine dair TEK CÜMLELİK, somut ve tekrar kullanılabilir bir ders çıkar. ` +
-              `Böyle bir ders yoksa sadece "YOK" yaz, başka hiçbir şey yazma.\n\n---\n\n${transcript}`,
+              `Aşağıdaki konuşmayı incele. Kullanıcı hakkında yeniden kullanılabilir, somut bir çıkarım var mı? ` +
+              `Sadece açıkça söylenmiş bilgi değil; örtük bir tercih (ör. bir şeyi hep aynı şekilde istemesi), ` +
+              `bir düzeltme (ör. NOVA'yı bir konuda uyarması), bir alışkanlık veya tekrar eden bir niyet de sayılır. ` +
+              `Varsa TEK CÜMLELİK, somut bir ders yaz. Yoksa ya da zaten bilinenlerle aynıysa sadece "YOK" yaz, başka hiçbir şey yazma.` +
+              knownBlock +
+              `\n\n---\n\n${transcript}`,
           },
         ],
         context: "Kısa ve öz cevap ver, sadece istenen tek cümleyi veya YOK yaz.",
@@ -179,33 +229,124 @@ async function distillLesson(history: Message[]): Promise<void> {
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok || !res.body) return;
+    if (!res.ok) return;
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let fullText = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const json = JSON.parse(line) as { message?: { content?: string } };
-          fullText += json.message?.content ?? "";
-        } catch { /* malformed line */ }
-      }
-    }
-
-    const lesson = fullText.trim();
+    const lesson = await collectOllamaText(res);
     if (lesson && !/^yok\.?$/i.test(lesson)) {
       void saveLesson(lesson);
     }
   } catch {
     // arka plan işlemi — sessizce yoksay
+  }
+}
+
+// ─── TERCİH HAFIZASI (nova_preferences.json — alan bazlı, sadece SON değer) ───
+
+async function getPreference(area: string, key: string): Promise<string | null> {
+  try {
+    const res = await fetch("/api/preferences");
+    if (!res.ok) return null;
+    const data = (await res.json()) as Record<string, Record<string, string>>;
+    return data[area]?.[key] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function setPreference(area: string, key: string, value: string): Promise<void> {
+  try {
+    await fetch("/api/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ area, key, value }),
+    });
+  } catch {
+    // sessizce yoksay
+  }
+}
+
+// ─── EYLEM ANLATIMI (şablon yerine özgün, tek cümlelik sesli geri bildirim) ───
+// Bir eylem gerçekleştikten sonra sonucu Ollama'ya anlattırır — aynı fonksiyon
+// her seferinde aynı kalıp cümleyi değil, kendi tarzında, o ana özgü bir cümle
+// üretir. Ollama kapalıysa veya zaman aşımına uğrarsa null döner, çağıran taraf
+// sabit yedek cümleye düşer.
+async function narrateAction(actionKey: keyof typeof NOVA_ACTION_DESCRIPTIONS, detail: string): Promise<string | null> {
+  const description = NOVA_ACTION_DESCRIPTIONS[actionKey];
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4_000);
+    const res = await fetch("/api/llm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content:
+              `Az önce şunu yaptın: ${description}\nSonuç: ${detail}\n` +
+              `Bunu kullanıcıya TEK KISA CÜMLEDE, kendi doğal tarzında haber ver. ` +
+              `Kalıp gibi durmasın, önceki söylediklerinle birebir aynı olmasın. Sadece o cümleyi yaz, başka hiçbir şey ekleme.`,
+          },
+        ],
+        context: "Kısa ve öz cevap ver, sadece istenen tek cümleyi yaz.",
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const text = await collectOllamaText(res);
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── NİYET ÇIKARIMI (tetikleyici kelime eşleşmese bile eylem tetikleme) ───────
+// Kullanıcı "müzik çal" gibi net bir tetikleyici söylemeden, dolaylı bir
+// cümleyle bir eylemi kastettiğinde (ör. "canım sıkıldı biraz müzik olsa iyi
+// olurdu") bunu Ollama'ya sordurur. Sadece regex/tetikleyici eşleşmesi
+// BAŞARISIZ olup genel sohbete düştüğümüzde çağrılır — asla ana yanıtı
+// bekletmez (arka planda, sessizce). Ollama kapalıysa veya zaman aşımına
+// uğrarsa null döner, hiçbir şey tetiklenmez.
+const ACTION_LINE_RE = /^([a-z_]+)\((.*)\)$/i;
+
+async function classifyAction(text: string, systemStatus: string): Promise<{ action: ClassifiableActionKey; arg: string } | null> {
+  const actionList = CLASSIFIABLE_ACTION_KEYS
+    .map((k) => `- ${k}(${k === "stop_all" ? "" : "argüman"}): ${NOVA_ACTION_DESCRIPTIONS[k]}`)
+    .join("\n");
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5_000);
+    const res = await fetch("/api/llm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content:
+              `Kullanıcı şunu söyledi: "${text}"\n` +
+              `Şu an sistemde: ${systemStatus}\n\n` +
+              `Kullanıcı bu kelimeleri hiç kullanmasa bile, aşağıdaki eylemlerden birini KASTETMİŞ olabilir mi?\n${actionList}\n\n` +
+              `Eminsen SADECE şu formatta tek satır yaz: eylem_adı(argüman) — argüman gerekmiyorsa eylem_adı()\n` +
+              `Emin değilsen, bu sadece normal bir sohbet cümlesiyse, ya da zaten sistemde o durum aktifse (ör. müzik zaten çalıyorsa play_music tekrar yazma) SADECE "YOK" yaz. Başka hiçbir şey yazma, açıklama yapma.`,
+          },
+        ],
+        context: "Kısa ve öz cevap ver, sadece istenen formatta tek satır yaz.",
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const raw = await collectOllamaText(res);
+    if (!raw || /^yok\.?$/i.test(raw)) return null;
+    const m = raw.match(ACTION_LINE_RE);
+    if (!m) return null;
+    const [, action, argRaw] = m;
+    if (!(CLASSIFIABLE_ACTION_KEYS as readonly string[]).includes(action)) return null;
+    return { action: action as ClassifiableActionKey, arg: argRaw.trim().replace(/^["']|["']$/g, "") };
+  } catch {
+    return null;
   }
 }
 
@@ -294,15 +435,21 @@ const STANDALONE_CAL_RE = /\bçal\b/i;
 
 const FILLER_WORDS = ["bana", "biraz", "lütfen", "şimdi", "hemen", "bi"];
 
-function stripFillers(s: string): string {
+// Baştaki VEYA sondaki dolgu kelimeleri temizler (örn. "internette ejderha"
+// -> "ejderha", "ejderha 3 boyutlu" -> "ejderha")
+function stripWords(s: string, words: string[]): string {
   let t = s.trim();
   let changed = true;
   while (changed) {
     changed = false;
-    for (const f of FILLER_WORDS) {
-      const re = new RegExp(`^${f}\\s+`, "i");
-      if (re.test(t)) {
-        t = t.replace(re, "").trim();
+    for (const w of words) {
+      const leadRe = new RegExp(`^${w}\\s+`, "i");
+      const trailRe = new RegExp(`\\s+${w}$`, "i");
+      if (leadRe.test(t)) {
+        t = t.replace(leadRe, "").trim();
+        changed = true;
+      } else if (trailRe.test(t)) {
+        t = t.replace(trailRe, "").trim();
         changed = true;
       }
     }
@@ -310,6 +457,13 @@ function stripFillers(s: string): string {
   return t;
 }
 
+function stripFillers(s: string): string {
+  return stripWords(s, FILLER_WORDS);
+}
+
+// null = tetikleyici hiç eşleşmedi. "" = tetikleyici eşleşti ama şarkı/sanatçı
+// belirtilmedi ("müzik aç" gibi) — çağıran taraf bu durumda en son çalınanı
+// hatırlayıp onu kullanır.
 function extractMusicQuery(text: string): string | null {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
@@ -319,8 +473,7 @@ function extractMusicQuery(text: string): string | null {
   const idx = lower.indexOf(trigger);
   const before = stripFillers(stripPossessiveSuffix(trimmed.slice(0, idx).trim()));
   const after = stripFillers(trimmed.slice(idx + trigger.length).trim());
-  const query = before || after;
-  return query || null;
+  return before || after;
 }
 
 // ─── HARİTA İSTEĞİ ────────────────────────────────────────────────────────────
@@ -332,12 +485,19 @@ const MAP_PATTERNS: RegExp[] = [
   /^harita\s+(.+)$/i,
 ];
 
+// Şehir belirtilmeden bare "haritayı aç/göster" — bu durumda en son gösterilen
+// şehir hatırlanır
+const MAP_BARE_OPEN_RE = /^haritay?ı\s+(?:aç|göster)$/i;
+
 function stripPossessiveSuffix(s: string): string {
   return s.replace(/['’]\p{L}+$/u, "").trim();
 }
 
+// null = tetikleyici hiç eşleşmedi. "" = tetikleyici eşleşti ama şehir
+// belirtilmedi — çağıran taraf en son gösterilen şehri hatırlayıp onu kullanır.
 function extractMapQuery(text: string): string | null {
   const t = text.trim();
+  if (MAP_BARE_OPEN_RE.test(t)) return "";
   for (const pat of MAP_PATTERNS) {
     const m = t.match(pat);
     if (m?.[1]?.trim()) return stripPossessiveSuffix(m[1].trim());
@@ -355,6 +515,13 @@ const MODEL_SEARCH_TRIGGERS = [
   "tasarım bul", "tasarım indir",
 ];
 
+// Sorguya karışan ama aslında aranan nesnenin bir parçası olmayan kelimeler
+// ("internette model ara" dediğinde "internette" sorguya girmesin, zaten
+// arama internet üzerinden yapılıyor; "3 boyutlu" da öyle, zaten 3D model
+// aranıyor — Thingiverse'e giden terimi gereksiz yere kirletiyor ve İngilizce
+// çeviriyi de bozuyordu)
+const MODEL_SEARCH_FILLER_WORDS = ["internette", "internetten", "online", "çevrimiçi", "3 boyutlu", "üç boyutlu", "3d", "için", "amacıyla"];
+
 function extractModelSearchQuery(text: string): string | null {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
@@ -363,7 +530,8 @@ function extractModelSearchQuery(text: string): string | null {
 
   const idx = lower.indexOf(trigger);
   const before = trimmed.slice(0, idx).trim();
-  const query = before || trimmed.replace(new RegExp(trigger, "i"), "").trim();
+  const raw = before || trimmed.replace(new RegExp(trigger, "i"), "").trim();
+  const query = stripWords(raw, MODEL_SEARCH_FILLER_WORDS);
   return query || null;
 }
 
@@ -400,7 +568,12 @@ const COMMANDS: CommandDef[] = [
     intent: "reset",
   },
   {
-    patterns: ["sus", "uyu", "bekleme moduna geç", "sessiz ol", "kapat", "görüşürüz nova", "bay bay nova"],
+    // Bare "kapat" kasıtlı olarak patterns'ten exact'e taşındı — substring
+    // olarak dururken "haritayı kapat", "müziği kapat", "modeli kapat",
+    // "kamerayı kapat" gibi TAMAMEN FARKLI komutları da yakalayıp (bu giriş
+    // dizide onlardan önce geldiği için) yanlışlıkla uykuya geçiriyordu.
+    patterns: ["sus", "uyu", "bekleme moduna geç", "sessiz ol", "görüşürüz nova", "bay bay nova"],
+    exact: ["kapat"],
     response: () => "Anlaşıldı. Bekleme moduna geçiyorum.",
     intent: "sleep",
   },
@@ -408,6 +581,23 @@ const COMMANDS: CommandDef[] = [
     patterns: ["vazgeç"],
     response: () => "Vazgeçildi.",
     intent: "cancel" as OrbIntent,
+  },
+  {
+    // Kısa panik kelimeleri ("dur"/"yeter"/"kes") kasıtlı olarak substring
+    // değil TAM eşleşme (exact) — "duruyor", "durum ne" gibi alakasız
+    // cümlelere yanlışlıkla tetiklenmesin. Doğal/dolaylı ifadeler ("kaosu
+    // durdur", "artık yeter bu kadar" vb.) buradaki listeye girmez —
+    // onları Ollama'nın niyet çıkarımı (bkz. classifyAction) yakalar; bu
+    // giriş sadece Ollama kapalıyken veya çok acil anlarda anında çalışan
+    // bir güvenlik ağı.
+    // Not: "sistemi sıfırla" kasıtlı olarak burada yok — "sıfırla" zaten
+    // "reset" komutunda (bu diziden önce) substring pattern olarak var,
+    // dizide daha önce geldiği için hep onu tetikleyip buraya hiç ulaşmazdı.
+    // classifyAction bu ifadeyi anlamdan zaten yakalıyor.
+    patterns: ["her şeyi durdur", "her şeyi kapat", "hepsini kapat", "hepsini durdur"],
+    exact: ["dur", "yeter", "kes"],
+    response: () => "Durduruldu.",
+    intent: "stop_all" as OrbIntent,
   },
   {
     patterns: ["haritayı kapat", "haritayı gizle"],
@@ -450,7 +640,10 @@ const COMMANDS: CommandDef[] = [
     intent: "clear_model" as OrbIntent,
   },
   {
-    patterns: ["kamerayı aç", "taramayı aç", "nesne tara", "tara"],
+    // Bare "tara" da aynı sebepten exact'e taşındı ("tarafından", "taraftar"
+    // gibi kelimeler substring olarak yanlışlıkla eşleşmesin diye)
+    patterns: ["kamerayı aç", "taramayı aç", "nesne tara"],
+    exact: ["tara"],
     response: () => "Kamera açılıyor.",
     intent: "open_scanner" as OrbIntent,
   },
@@ -493,7 +686,24 @@ const COMMANDS: CommandDef[] = [
     intent: "select_model_3" as OrbIntent,
   },
   {
-    patterns: ["saat kaç", "saat"],
+    patterns: ["dördüncüsünü indir", "dördüncü modeli indir", "dördüncü seçenek", "dört numarayı indir"],
+    exact: ["dördüncü", "dört", "dördüncüsünü"],
+    response: () => "",
+    intent: "select_model_4" as OrbIntent,
+  },
+  {
+    patterns: ["beşincisini indir", "beşinci modeli indir", "beşinci seçenek", "beş numarayı indir"],
+    exact: ["beşinci", "beş", "beşincisini"],
+    response: () => "",
+    intent: "select_model_5" as OrbIntent,
+  },
+  {
+    // Bare "saat" patterns'te (substring) dururken "saat kaç" DIŞINDA "saat
+    // yönünde çevir", "bu saat kaça alındı" gibi hiç alakasız cümlelerde de
+    // tetikleniyordu, cümlenin geri kalanına hiç bakmadan direkt saati
+    // söylüyordu. Artık sadece TEK BAŞINA "saat" dendiğinde çalışıyor.
+    patterns: ["saat kaç", "saat kaçta", "saatin kaç"],
+    exact: ["saat"],
     response: () => {
       const now = new Date();
       const h = now.getHours();
@@ -503,7 +713,11 @@ const COMMANDS: CommandDef[] = [
     },
   },
   {
-    patterns: ["tarih", "bugün", "hangi gün", "günlerden ne"],
+    // Bare "tarih"/"bugün" aynı sebepten exact'e taşındı — "bugün canım
+    // sıkıldı" gibi cümlelerde "bugün" geçtiği için yanlışlıkla tarih
+    // söylenmesini önlüyor.
+    patterns: ["hangi gün", "günlerden ne"],
+    exact: ["tarih", "bugün"],
     response: () =>
       `Bugün ${new Date().toLocaleDateString("tr-TR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`,
   },
@@ -638,6 +852,7 @@ export function useVoice(
   onModelSearch?: (query: string) => void,
   onMapRequest?: (city: string) => void,
   onMusicRequest?: (query: string) => void,
+  getSystemStatus?: () => string,
 ): VoiceResult {
   const recognitionRef = useRef<ListenHandle | null>(null);
   const canListenRef = useRef(false);
@@ -649,6 +864,7 @@ export function useVoice(
   const bargeInRecognitionRef = useRef<ListenHandle | null>(null);
   const bargeInActiveRef = useRef(false);
   const lastAssistantMessageRef = useRef<string>("");
+  const llmTurnCountRef = useRef(0);
 
   // Stable refs for callbacks — processInput never goes stale even across renders
   const onIntentRef      = useRef(onIntent);
@@ -657,6 +873,7 @@ export function useVoice(
   const onModelSearchRef = useRef(onModelSearch);
   const onMapReqRef      = useRef(onMapRequest);
   const onMusicReqRef    = useRef(onMusicRequest);
+  const getSystemStatusRef = useRef(getSystemStatus);
   useEffect(() => {
     onIntentRef.current    = onIntent;
     onVideoReqRef.current  = onVideoRequest;
@@ -664,7 +881,8 @@ export function useVoice(
     onModelSearchRef.current = onModelSearch;
     onMapReqRef.current = onMapRequest;
     onMusicReqRef.current = onMusicRequest;
-  }, [onIntent, onVideoRequest, onModelLoad, onModelSearch, onMapRequest, onMusicRequest]);
+    getSystemStatusRef.current = getSystemStatus;
+  }, [onIntent, onVideoRequest, onModelLoad, onModelSearch, onMapRequest, onMusicRequest, getSystemStatus]);
 
   const [modelStatus, setModelStatus] = useState<ModelStatus>("unsupported");
   const [isListening, setIsListening] = useState(false);
@@ -769,7 +987,9 @@ export function useVoice(
         local.intent === "prev_model" ||
         local.intent === "select_model_1" ||
         local.intent === "select_model_2" ||
-        local.intent === "select_model_3";
+        local.intent === "select_model_3" ||
+        local.intent === "select_model_4" ||
+        local.intent === "select_model_5";
       if (isNavIntent) {
         lastTranscriptRef.current = ""; // aynı komutu hemen tekrar kabul et
         setModelStatus("ready");
@@ -779,6 +999,15 @@ export function useVoice(
       // Uykuya geçerken sohbetten sessizce tek cümlelik bir ders çıkarmayı dene (self-update)
       if (local.intent === "sleep" && ollamaOnline) {
         void distillLesson(conversationRef.current);
+      }
+
+      // "her şeyi durdur" — panel kapatmalar onIntentRef üzerinden JarvisOrb'a
+      // gidiyor (yukarıda tetiklendi), burada da ses/LLM tarafını kesiyoruz:
+      // o an süren bir cevap akışı varsa iptal et, barge-in dinleyicisini kapat.
+      if (local.intent === "stop_all") {
+        llmAbortRef.current?.abort();
+        stopBargeInListener();
+        cancelSpeech();
       }
 
       setModelStatus("speaking");
@@ -836,15 +1065,36 @@ export function useVoice(
 
     // ── Müzik isteği ─────────────────────────────────────────────────────────
     const musicQuery = extractMusicQuery(text);
-    if (musicQuery) {
+    if (musicQuery !== null) {
       if (!isActive()) return;
-      const reply = `${musicQuery} çalınıyor.`;
+      let query = musicQuery;
+      if (!query) query = (await getPreference("music", "lastQuery")) ?? "";
+      if (!isActive()) return;
+
+      if (!query) {
+        const reply = "Ne çalmamı istersin?";
+        setLastResponse(reply);
+        setModelStatus("speaking");
+        conversationRef.current.push({ role: "user", content: text });
+        conversationRef.current.push({ role: "assistant", content: reply });
+        saveMemory(conversationRef.current);
+        speak(reply, () => { if (isActive()) setModelStatus("ready"); });
+        return;
+      }
+      void setPreference("music", "lastQuery", query);
+
+      let reply = `${query} çalınıyor.`;
+      if (ollamaOnline) {
+        const narrated = await narrateAction("play_music", `${query} çalınmaya başlıyor.`);
+        if (!isActive()) return;
+        if (narrated) reply = narrated;
+      }
       setLastResponse(reply);
       setModelStatus("speaking");
       conversationRef.current.push({ role: "user", content: text });
       conversationRef.current.push({ role: "assistant", content: reply });
       saveMemory(conversationRef.current);
-      speak(reply, () => { onMusicReqRef.current?.(musicQuery); if (isActive()) setModelStatus("ready"); });
+      speak(reply, () => { onMusicReqRef.current?.(query); if (isActive()) setModelStatus("ready"); });
       return;
     }
 
@@ -864,15 +1114,36 @@ export function useVoice(
 
     // ── Harita isteği ────────────────────────────────────────────────────────
     const mapQuery = extractMapQuery(text);
-    if (mapQuery) {
+    if (mapQuery !== null) {
       if (!isActive()) return;
-      const reply = `${mapQuery} haritası gösteriliyor.`;
+      let city = mapQuery;
+      if (!city) city = (await getPreference("map", "lastCity")) ?? "";
+      if (!isActive()) return;
+
+      if (!city) {
+        const reply = "Hangi şehri göstereyim?";
+        setLastResponse(reply);
+        setModelStatus("speaking");
+        conversationRef.current.push({ role: "user", content: text });
+        conversationRef.current.push({ role: "assistant", content: reply });
+        saveMemory(conversationRef.current);
+        speak(reply, () => { if (isActive()) setModelStatus("ready"); });
+        return;
+      }
+      void setPreference("map", "lastCity", city);
+
+      let reply = `${city} haritası gösteriliyor.`;
+      if (ollamaOnline) {
+        const narrated = await narrateAction("show_map", `${city} haritası açılıyor.`);
+        if (!isActive()) return;
+        if (narrated) reply = narrated;
+      }
       setLastResponse(reply);
       setModelStatus("speaking");
       conversationRef.current.push({ role: "user", content: text });
       conversationRef.current.push({ role: "assistant", content: reply });
       saveMemory(conversationRef.current);
-      speak(reply, () => { onMapReqRef.current?.(mapQuery); if (isActive()) setModelStatus("ready"); });
+      speak(reply, () => { onMapReqRef.current?.(city); if (isActive()) setModelStatus("ready"); });
       return;
     }
 
@@ -928,6 +1199,42 @@ export function useVoice(
 
       setModelStatus("thinking");
 
+      // Tetikleyici kelime eşleşmediği için buraya (genel sohbete) düştük —
+      // yine de dolaylı bir şekilde bir eylem kastedilmiş olabilir. Ana
+      // cevabı hiç bekletmeden, arka planda soruyoruz; sonuç gelince (ana
+      // cevap zaten söylenmiş olsa bile) ilgili eylemi tetikliyoruz.
+      void classifyAction(text, getSystemStatusRef.current?.() ?? "").then(async (result) => {
+        if (!result || !isActive()) return;
+        switch (result.action) {
+          case "play_music": {
+            // Argüman verilmediyse (ör. "canım sıkıldı biraz müzik olsa" gibi
+            // hedefsiz bir istek) tetikleyici-kelime yolundaki gibi en son
+            // çalınanı hatırlayıp onu kullan
+            const query = result.arg || (await getPreference("music", "lastQuery")) || "";
+            if (!isActive() || !query) return;
+            void setPreference("music", "lastQuery", query);
+            onMusicReqRef.current?.(query);
+            break;
+          }
+          case "show_map": {
+            const city = result.arg || (await getPreference("map", "lastCity")) || "";
+            if (!isActive() || !city) return;
+            void setPreference("map", "lastCity", city);
+            onMapReqRef.current?.(city);
+            break;
+          }
+          case "stop_all":
+            llmAbortRef.current?.abort();
+            stopBargeInListener();
+            cancelSpeech();
+            onIntentRef.current?.("stop_all");
+            break;
+          case "search_model":
+            if (result.arg) onModelSearchRef.current?.(result.arg);
+            break;
+        }
+      });
+
       // İnternet araması gerekiyorsa önce Tavily'e sor
       let searchContext: string | undefined;
       if (needsSearch(text)) {
@@ -936,6 +1243,13 @@ export function useVoice(
         if (results) {
           searchContext = `Aşağıdaki güncel web arama sonuçlarını kullanarak soruyu yanıtla:\n\n${results}`;
         }
+      }
+
+      // Sistem durumunu (hangi panel açık, müzik çalıyor mu vb.) her turda
+      // ekliyoruz ki Nova "şu an ne oluyor"u bilerek cevap versin
+      const statusLine = getSystemStatusRef.current?.();
+      if (statusLine) {
+        searchContext = searchContext ? `${searchContext}\n\n${statusLine}` : statusLine;
       }
 
       let fullReply = "";
@@ -993,6 +1307,13 @@ export function useVoice(
         setLastResponse(fullReply);
         lastAssistantMessageRef.current = fullReply;
         streamDone = true;
+
+        // Konuşma sürerken de (sadece uykuya geçişte değil) arka planda sessizce
+        // ders çıkarmayı dener — periyodik, engelleyici değil (fire-and-forget)
+        llmTurnCountRef.current += 1;
+        if (llmTurnCountRef.current % 3 === 0) {
+          void distillLesson(conversationRef.current);
+        }
 
         // stream bitti ama kuyruk hâlâ boşsa (kısa yanıtlar) direkt ready
         if (!isSpeaking && sentenceQueue.length === 0) {
@@ -1100,6 +1421,11 @@ export function useVoice(
         lastAssistantMessageRef.current = fullReply;
         streamDone = true;
 
+        llmTurnCountRef.current += 1;
+        if (llmTurnCountRef.current % 3 === 0) {
+          void distillLesson(conversationRef.current);
+        }
+
         if (!isSpeaking && sentenceQueue.length === 0) {
           setModelStatus("ready");
         }
@@ -1169,6 +1495,23 @@ export function useVoice(
     speak(text, () => setModelStatus("ready"));
   }, []);
 
+  // Bir eylem tamamlandıktan SONRA (ör. klasör okunup modeller yüklendikten sonra)
+  // gerçek sonucu Ollama'ya özgün bir cümleyle anlattırıp söyler. Ollama kapalıysa
+  // veya yanıt vermezse detay metnini olduğu gibi söyler (sessiz kalmaz).
+  const narrateAndSpeak = useCallback((actionKey: NovaActionKey, detail: string) => {
+    if (!detail.trim()) return;
+    void (async () => {
+      let reply = detail;
+      if (ollamaOnline) {
+        const narrated = await narrateAction(actionKey, detail);
+        if (narrated) reply = narrated;
+      }
+      setLastResponse(reply);
+      setModelStatus("speaking");
+      speak(reply, () => setModelStatus("ready"));
+    })();
+  }, [ollamaOnline]);
+
   return {
     modelStatus,
     isListening,
@@ -1180,5 +1523,6 @@ export function useVoice(
     stopListening,
     sendText,
     speakText,
+    narrateAndSpeak,
   };
 }

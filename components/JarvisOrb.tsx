@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createOrbScene, type OrbSceneApi } from "@/lib/orbScene";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import { useVoice } from "@/lib/useVoice";
+import { type NovaActionKey } from "@/lib/novaActions";
 import { useAlwaysOn } from "@/lib/useAlwaysOn";
 import { useModelLibrary } from "@/lib/useModelLibrary";
 import { useObjectDetector } from "@/lib/useObjectDetector";
@@ -50,8 +51,10 @@ export default function NovaOrb() {
   const scannerRef = useRef<ObjectScannerHandle | null>(null);
   const projectFormRef = useRef<ProjectFormHandle | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  const [mapCity, setMapCity] = useState<string | null>(null);
   const mapViewRef = useRef<MapViewHandle | null>(null);
   const musicPlayerRef = useRef<MusicPlayerHandle | null>(null);
+  const [musicPlaying, setMusicPlaying] = useState(false);
 
   const modelLib = useModelLibrary(sceneReady ? sceneRef.current : null);
   const detector = useObjectDetector();
@@ -60,6 +63,7 @@ export default function NovaOrb() {
   const alwaysOnRef = useRef<(() => void) | null>(null);
   const captureFrameRef = useRef<(() => { imageBase64: string; mimeType: string } | null) | null>(null);
   const speakTextRef = useRef<((text: string) => void) | null>(null);
+  const narrateAndSpeakRef = useRef<((actionKey: NovaActionKey, detail: string) => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Gesture callbacks'de kullanılan state'leri ref'ten oku (closure problem çözmek için)
@@ -100,6 +104,7 @@ export default function NovaOrb() {
       const data = (await res.json()) as { videoId?: string; title?: string; thumbnail?: string | null; error?: string };
       if (data.videoId) {
         musicPlayerRef.current?.play(data.videoId, data.title, data.thumbnail);
+        setMusicPlaying(true);
       } else {
         setCommandLog((prev) => [...prev.slice(-9), `◈ ${query} için müzik bulunamadı.`]);
       }
@@ -107,6 +112,29 @@ export default function NovaOrb() {
       setCommandLog((prev) => [...prev.slice(-9), `◈ ${query} için müzik bulunamadı.`]);
     }
   }, []);
+
+  const closeAllPanels = useCallback(() => {
+    if (scannerOpen) scannerRef.current?.cancel();
+    if (projectFormOpen) projectFormRef.current?.cancel();
+    if (modelBrowserOpen) modelBrowserRef.current?.cancel();
+    if (mapOpen) mapViewRef.current?.cancel();
+    musicPlayerRef.current?.stop();
+    setMusicPlaying(false);
+  }, [scannerOpen, projectFormOpen, modelBrowserOpen, mapOpen]);
+
+  // Ollama'ya her turda gönderilen, "şu an sistemde ne açık/aktif" özeti —
+  // hem doğal cevaplarda hem niyet çıkarımında (classifyAction) kullanılıyor.
+  const getSystemStatus = useCallback((): string => {
+    const active: string[] = [];
+    if (scannerOpen) active.push("kamera/tarama açık");
+    if (projectFormOpen) active.push("proje formu açık");
+    if (modelBrowserOpen) active.push("model tarayıcı paneli açık");
+    if (mapOpen) active.push(mapCity ? `harita açık (${mapCity})` : "harita açık");
+    if (musicPlaying) active.push("müzik çalıyor");
+    if (videoId) active.push("video oynatılıyor");
+    if (modelLib.files.length > 0) active.push(`sahnede ${modelLib.files.length} model yüklü`);
+    return active.length ? `Şu an aktif: ${active.join(", ")}.` : "Şu an hiçbir panel açık değil, boşta.";
+  }, [scannerOpen, projectFormOpen, modelBrowserOpen, mapOpen, mapCity, musicPlaying, videoId, modelLib.files.length]);
 
   const describeScene = useCallback(async () => {
     if (!captureFrameRef.current) {
@@ -163,6 +191,7 @@ export default function NovaOrb() {
               }
               void modelLib.loadPickedFolder(picked).then((loadedMsg) => {
                 setCommandLog((prev) => [...prev.slice(-9), `◈ ${loadedMsg}`]);
+                narrateAndSpeakRef.current?.("load_model_folder", loadedMsg);
               });
             });
           } else {
@@ -213,12 +242,22 @@ export default function NovaOrb() {
         case "select_model_3":
           modelBrowserRef.current?.selectResult(2);
           break;
+        case "select_model_4":
+          modelBrowserRef.current?.selectResult(3);
+          break;
+        case "select_model_5":
+          modelBrowserRef.current?.selectResult(4);
+          break;
         case "cancel":
-          if (scannerOpen) scannerRef.current?.cancel();
-          if (projectFormOpen) projectFormRef.current?.cancel();
-          if (modelBrowserOpen) modelBrowserRef.current?.cancel();
-          if (mapOpen) mapViewRef.current?.cancel();
-          musicPlayerRef.current?.stop();
+          closeAllPanels();
+          break;
+        case "stop_all":
+          // "her şeyi durdur" — cancel'ın yaptığı her şey + video overlay.
+          // Ses/LLM tarafının kesilmesi (speech/stream abort) lib/useVoice.ts
+          // içinde, bu intent tetiklenmeden hemen önce zaten yapılıyor.
+          closeAllPanels();
+          setVideoId(null);
+          setCommandLog((prev) => [...prev.slice(-9), "◈ Her şey durduruldu."]);
           break;
         case "close_map":
           mapViewRef.current?.cancel();
@@ -231,6 +270,7 @@ export default function NovaOrb() {
           break;
         case "close_music":
           musicPlayerRef.current?.stop();
+          setMusicPlaying(false);
           break;
       }
     },
@@ -250,17 +290,20 @@ export default function NovaOrb() {
     },
     (city) => {
       // onMapRequest
+      setMapCity(city);
       mapViewRef.current?.showCity(city);
     },
     (query) => {
       // onMusicRequest
       void playMusic(query);
     },
+    getSystemStatus,
   );
 
   const alwaysOn    = useAlwaysOn(voice);
   alwaysOnRef.current = alwaysOn.goToSleep;
   speakTextRef.current = voice.speakText;
+  narrateAndSpeakRef.current = voice.narrateAndSpeak;
 
   // Voice hazır olduğunda wake word dinlemeyi otomatik başlat (tek sefer)
   const autoStartedRef = useRef(false);

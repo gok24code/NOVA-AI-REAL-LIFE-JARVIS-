@@ -159,11 +159,11 @@ const ModelBrowser = forwardRef<ModelBrowserHandle, ModelBrowserProps>(function 
         setThingError(data.error === "no_key" ? "API key tanımlı değil" : data.error);
         return [];
       }
-      const top3 = (data.results ?? []).slice(0, 3);
-      setThingResults(top3);
-      setAwaitingChoice(top3.length > 0);
-      if (!top3.length) setThingError("Sonuç bulunamadı");
-      return top3;
+      const top5 = (data.results ?? []).slice(0, 5);
+      setThingResults(top5);
+      setAwaitingChoice(top5.length > 0);
+      if (!top5.length) setThingError("Sonuç bulunamadı");
+      return top5;
     } catch {
       setThingError("Arama başarısız");
       return [];

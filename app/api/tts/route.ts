@@ -5,8 +5,21 @@ const VOICE = "tr-TR-AhmetNeural";
 
 const PROSODY = new ProsodyOptions();
 PROSODY.pitch = "-6%";
-PROSODY.rate = 0.92;
+PROSODY.rate = 1.38; // önceki 0.92'nin 1.5 katı
 PROSODY.volume = "+15%";
+
+// NOT: Yabancı kelimeleri <lang xml:lang="en-US"> ile İngilizce fonetikle
+// okutmayı denedim (msedge-tts input'u escape etmeden SSML'e gömüyor, teorik
+// olarak mümkün) ama test edince kullandığımız ücretsiz Edge TTS websocket'i
+// (Azure'ın ücretli Speech SDK'sından farklı, resmi olmayan "read aloud"
+// endpoint'i) bu elementi desteklemiyor — bağlantıyı senkronizasyon
+// tamamlanmadan kapatıp "Stream closed before the synthesis completed"
+// hatası veriyor, TTS tamamen kırılıyor. Bu yüzden geri alındı. Gerçek
+// çözüm için ya ücretli Azure Speech SDK'ya geçmek (API key + maliyet)
+// ya da yabancı kelimeyi ayrı bir İngilizce ses (ör. en-US-*) ile ayrı
+// bir TTS isteğiyle üretip ses dosyalarını birleştirmek gerekiyor — bu
+// da kelime ortasında ses karakterinin aniden değişmesi riski taşıyor.
+// İkisi de bu oturumun kapsamı dışında bırakıldı, istenirse ayrı ele alınabilir.
 
 export async function POST(req: NextRequest) {
   const { text } = (await req.json()) as { text: string };
