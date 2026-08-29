@@ -27,15 +27,27 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 ## Özellikler
 
 **Son Güncellemeler:**
+- **Sistem durumu farkındalığı + niyet çıkarımı** 🧠: Nova artık hangi panelin açık
+  olduğunu, ne çaldığını, kaç model yüklü olduğunu biliyor; tetikleyici-kelime
+  eşleşmesi başarısız olduğunda ("canım sıkılıyor, bir şeyler dinlesek" gibi) arka
+  planda LLM ile niyeti çıkarıp doğru eylemi (`play_music`/`show_map`/`stop_all`/
+  `search_model`) yine de tetikliyor
+- **Tercih hafızası**: "müzik aç" (şarkı adı vermeden) en son çalınan şarkıyı,
+  "haritayı aç" (şehir vermeden) en son gösterilen şehri hatırlayıp açıyor
+- **"her şeyi durdur"**: tek bir sesli komutla açık her paneli kapatıp o an süren
+  konuşmayı/LLM akışını anında kesen sistem interrupt'ı
 - **Model Tasarım Modu (Edit Mode)** 🧩: Yüklenen 3D modelleri holografik bir çalışma
   alanında seçip taşıyarak parçaları görsel olarak "montaj" haline getirme — bkz.
   [3D model — düzenleme ve montaj](#3d-model--düzenleme-ve-montaj-edit-mode)
 - **Sahneyi anlatma**: "ne görüyorsun" / "ortamı anlat" — kameradan tespit edilen
   nesneleri Türkçe cümleyle özetliyor
 - **Intelligent Barge-In** 🎤: Nova konuşurken sesli kesme — Ollama embedding ile bağlamı koruyup doğal yanıt veriyor
-- **Self-Update** 📚: "şunu öğren" komutuyla kendi kendini uyarlayan bellek sistemi
+- **Self-Update** 📚: "şunu öğren" komutuyla kendi kendini uyarlayan bellek sistemi, artık
+  periyodik olarak (sohbet sürerken de) arka planda tetikleniyor
 - **Kullanıcı Profili** 👤: İsim ve tercihler otomatik kaydediliyor, her cevap bağlamına uyuyor
 - **Plan → Onay → Çalıştırma** ✅: Proje üretiminde iki aşamalı güvenlik (salt-okunur plan sonra insan onayı)
+- **Gri-turkuaz tema**: Lacivert arkaplanlar nötr koyu griye, tek mavi vurgu rengi daha
+  açık bir turkuaza çevrildi
 
 ### Görsel arayüz
 - Three.js orb sahnesi: Neural Core, bloom, chromatic aberration, scanline/grain/vignette
@@ -59,27 +71,48 @@ hem de bağımsız bir Electron masaüstü uygulaması olarak çalışır.
 
 ### LLM Beyni (Ollama)
 - `/api/llm` proxy route, streaming yanıt — **cümle bitince otomatik TTS başlar**
-- Sistem prompt: kimlik (`nova_identity.md`) + öğrenilen dersler (`nova_lessons.md`) + gerekirse web arama context'i
+- Model: `qwen3:8b` (`.env.local` → `OLLAMA_MODEL`) — `think:false` (gizli reasoning
+  bloğu kapalı, aksi halde `num_predict` bütçesi cevap hiç üretilmeden tükenebiliyor)
+  ve `num_ctx:8192` (8GB VRAM'de tam GPU'da kalması için) ile tune edildi
+- Sistem prompt: kimlik (`nova_identity.md`) + öğrenilen dersler (`nova_lessons.md`) +
+  kullanıcı profili + **canlı sistem durumu** (açık panel, çalan müzik, yüklü model
+  sayısı) + gerekirse web arama context'i
 - Konuşma geçmişi kalıcı (`lib/memory.ts`), her turda son 20 mesaj gönderilir
 - Yukarıdaki sabit komutların hiçbirine uymayan ama haber/fiyat/döviz/hava durumu/kimdir/
   nedir/tarif/maç/deprem gibi geniş bir anahtar kelime setiyle eşleşen istekler otomatik
   olarak Tavily web aramasıyla zenginleştirilip LLM'e context olarak veriliyor
+- **Niyet çıkarımı (`classifyAction`)**: tetikleyici-kelime eşleşmesi başarısız olup
+  genel sohbete düştüğünde, ana cevabı bekletmeden arka planda Ollama'ya "kullanıcı
+  bunlardan birini mi kastetti?" diye sorup gerekirse `play_music`/`show_map`/
+  `stop_all`/`search_model` eylemini yine de tetikleyen bir güvenlik ağı
+- **"her şeyi durdur"** (`stop_all`): açık her paneli (harita, müzik, kamera, model
+  tarayıcı, proje formu, video) kapatır, süren konuşmayı/LLM akışını anında keser —
+  otonom proje ajanı işine dokunmaz. "dur"/"yeter"/"kes" kelimelerinin tek başına
+  söylenmesi Ollama'sız da anında çalışan bir güvenlik ağı
 - **Self-Update (Öğrenilen Notlar)**:
   - `"şunu öğren: ..."` / `"bunu not al: ..."` / `"bunu hatırla: ..."` → davranışsal ders olarak `nova_lessons.md`'ye kaydediliyor
-  - Uykuya giderken arka planda otomatik ders çıkarım (sohbetten anlamlı dersleri filtreler)
+  - Uykuya giderken **ve** sohbet sürerken periyodik olarak (arka planda, sessizce) otomatik ders çıkarım (sohbetten anlamlı dersleri filtreler, dedupe'li)
 - **Kullanıcı Profili**:
   - `"adım X"` / `"ismim X"` / `"beni X olarak çağır/adlandır/hatırla"` → kullanıcı adı kaydediliyor
   - `"tercihimi kaydet: ..."` / `"bunu tercih olarak kaydet: ..."` → tercih listesine ekleniyor (max 40)
   - Profil her LLM çağrısında sistem promptuna otomatik dahil ediliyor
+- **Tercih hafızası (`nova_preferences.json`)**: son çalınan şarkı / son gösterilen
+  şehir gibi alan bazlı son-değer kaydı — "müzik aç" veya "haritayı aç" şehir/şarkı
+  adı verilmeden söylenirse en son kullanılanı hatırlayıp açıyor
 - Ollama offline ise yerel regex/trigger tabanlı komut motoruna düşer
 
 ### TTS
 - **msedge-tts** (ücretsiz, key gerekmez), ses: `tr-TR-AhmetNeural`
 - Pitch/rate/volume ayarlı ("karizmatik" ton), sayılar Türkçe kelimeye çevrilir
+- Konuşma hızı önceki değerin 1.5 katına çıkarıldı (`rate: 0.92 → 1.38`)
 
 ### 3D model — bulma ve üretme
-- Thingiverse'de arama (`"[X] modelini/kılıfını/parçasını bul/indir/ara"`), sesli
-  **"birinci/ikinci/üçüncü"** ile seçim ve otomatik indirme
+- Thingiverse'de arama (`"[X] modelini/kılıfını/parçasını bul/indir/ara"`), ilk 5 sonuç
+  sunulur, sesli **"birinci/.../beşinci"** ile seçim ve otomatik indirme
+- Arama sorgusu temizlenir ("internette", "3 boyutlu", "için" gibi dolgu kelimeleri
+  aranan terime karışmaz) ve Türkçe terim aramadan önce Ollama ile otomatik İngilizce'ye
+  çevrilir (Thingiverse içeriği neredeyse tamamen İngilizce) — Ollama kapalıysa orijinal
+  terimle aramaya devam eder, arama hiçbir zaman kırılmaz
 - Belirli bir modeli adıyla yükleme: **"[X] modelini yükle/göster/aç"** — Thingiverse
   aramasından ayrı, yerel kütüphanede doğrudan isimle model açan farklı bir komut yolu
 - Kameradan nesne tespiti (offline, `@xenova/transformers` DETR-ResNet-50, `/api/detect`)
@@ -256,12 +289,13 @@ npm run electron:dist
 | "uyan" | Wake word — sonrasında komut dinler |
 | "sus" / "uyu" / "sessiz ol" / "bekleme moduna geç" / "kapat" / "görüşürüz nova" / "bay bay nova" | Uyku moduna geç (konuşurken bile kesme yok) |
 | "vazgeç" | Açık olan her şeyi iptal et |
+| "her şeyi durdur" / "dur" / "yeter" / "kes" | Açık her paneli kapat, süren konuşmayı anında kes (`stop_all`) |
 | "yaklaştır" / "büyüt" / "zoom yap" | Orb'a zoom in |
 | "uzaklaştır" / "küçült" / "zoom out" | Orb'dan zoom out |
 | "sıfırla" / "resetle" / "başa dön" | Orb kamerasını sıfırla |
 | "saat kaç" | Saati Türkçe kelimeyle söyle |
 | "tarih" / "bugün" / "hangi gün" | Bugünün tarihini söyle |
-| "[şarkı adı] çal" / "müzik aç" / "çalar mısın" | YouTube'dan müzik ara ve çal |
+| "[şarkı adı] çal" / "müzik aç" / "çalar mısın" | YouTube'dan müzik ara ve çal (şarkı adı verilmezse en son çalınanı hatırlar) |
 | "müziği durdur/duraklat" / "müziğe devam et" / "müziği kapat" | Müzik kontrolü |
 | "[X] videosunu aç/oynat" / "youtube'dan X" / "X izle" | YouTube'da video aç |
 | "[model adı] modelini/kılıfını/parçasını bul/indir/ara" | Thingiverse'de ara, "birinci/ikinci/üçüncü" ile seç |
@@ -274,7 +308,7 @@ npm run electron:dist
 | "ne görüyorsun" / "ne var orada" / "etrafı anlat" / "ortamı anlat" | Kameradaki sahneyi Türkçe cümleyle özetle |
 | "yeni proje" / "proje oluştur" | Otonom proje ajanını başlat (plan → onay → çalıştırma) |
 | "proje formunu kapat" | Açık proje formunu iptal et |
-| "[şehir] haritasını göster" | Harita aç |
+| "[şehir] haritasını göster" / "haritayı aç" | Harita aç (şehir verilmezse en son gösterileni hatırlar) |
 | "haritayı kapat" / "haritayı gizle" | Haritayı kapat |
 | "son dakika haberleri" / "güncel haber" | Direkt haber videosu aç |
 | "şunu öğren: ..." / "bunu not al: ..." / "bunu hatırla: ..." | Davranışsal ders olarak `nova_lessons.md`'ye kaydet |
@@ -309,6 +343,7 @@ app/
     stt/                       whisper.cpp proxy (Electron sesli komut fallback'i)
     tts/                       msedge-tts proxy
     profile/                   Kullanıcı profili (isim, tercihler)
+    preferences/                Alan bazlı son-tercih hafızası (nova_preferences.json — son şarkı/şehir)
     self-update/               Öğrenilen notlar (nova_lessons.md)
     services/{search,geocode,thingiverse}/
     project/                   Otonom proje ajanı (plan → onay → çalıştırma)
