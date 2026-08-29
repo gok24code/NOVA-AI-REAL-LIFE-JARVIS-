@@ -14,7 +14,14 @@
   "build": {
     "appId": "com.nova.assistant",
     "productName": "N.O.V.A.",
-    "asar": false,
+    "asar": true,
+    "compression": "store",
+    "asarUnpack": [
+      "**/*.node",
+      "node_modules/@next/swc-*/**/*",
+      "node_modules/@img/**/*",
+      ".next/**/*"
+    ],
     "directories": {
       "output": "release"
     },

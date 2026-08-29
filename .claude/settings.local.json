@@ -44,7 +44,10 @@
       "Bash(curl -s http://localhost:3000 -o /tmp/out7.html -w \"HTTP:%{http_code}\\\\n\")",
       "Bash(curl -s http://localhost:3000 -o /tmp/out8.html -w \"HTTP:%{http_code}\\\\n\")",
       "Bash(curl -s http://localhost:3000 -o /tmp/out9.html -w \"HTTP:%{http_code}\\\\n\")",
-      "Bash(curl -s http://localhost:3000 -o /tmp/out10.html -w \"HTTP:%{http_code}\\\\n\")"
+      "Bash(curl -s http://localhost:3000 -o /tmp/out10.html -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(powershell -NoProfile -Command \"taskkill /IM 'N.O.V.A.exe' /F\" 2>/dev/null; powershell -NoProfile -Command \"taskkill /IM node.exe /F\" 2>/dev/null; powershell -NoProfile -Command \"taskkill /IM whisper-server.exe /F\" 2>/dev/null; echo cleaned)"
     ]
   }
 }

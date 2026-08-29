@@ -6,7 +6,7 @@ import { join } from "path";
 // derslerden ayrı — burada saklanan şey davranışsal bir ders değil, düz veri:
 // en son çalınan şarkı, en son gösterilen şehir vb. Sadece SON değer tutulur,
 // geçmiş/sıklık takibi yapılmaz.
-const PREFS_PATH = join(process.cwd(), "nova_preferences.json");
+const PREFS_PATH = join(process.env.NOVA_DATA_DIR || process.cwd(), "nova_preferences.json");
 
 type Prefs = Record<string, Record<string, string>>;
 

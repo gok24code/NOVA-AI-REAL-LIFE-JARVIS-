@@ -12,8 +12,14 @@ const os = require("os");
 
 const PORT = process.env.NOVA_PORT || 3000;
 const APP_ROOT = app.isPackaged
-  ? path.join(process.resourcesPath, "app")
+  ? path.join(process.resourcesPath, "app.asar")
   : path.join(__dirname, "..");
+// child_process.spawn's cwd is resolved by the OS, which has no concept of
+// asar virtual paths — it must be a real directory. process.resourcesPath
+// (the folder that contains app.asar/app.asar.unpacked) is real; APP_ROOT
+// itself is passed to "next start <dir>" instead, since Next's own file
+// reads/writes go through Electron's asar-aware fs and resolve correctly.
+const SPAWN_CWD = app.isPackaged ? process.resourcesPath : APP_ROOT;
 
 // Local whisper.cpp server (see app/api/stt/route.ts) — used as a voice
 // fallback in Electron since Web Speech API can't reach Google there.
@@ -31,23 +37,32 @@ const WHISPER_THREADS = process.env.WHISPER_THREADS || "12";
 let serverProcess = null;
 let whisperProcess = null;
 let mainWindow = null;
+let splashWindow = null;
 
 function startNextServer() {
   const nextCli = path.join(APP_ROOT, "node_modules", "next", "dist", "bin", "next");
 
-  serverProcess = spawn(process.execPath, [nextCli, "start", "-p", String(PORT)], {
-    cwd: APP_ROOT,
+  serverProcess = spawn(process.execPath, [nextCli, "start", APP_ROOT, "-p", String(PORT)], {
+    cwd: SPAWN_CWD,
     stdio: "inherit",
     windowsHide: true,
     env: {
       ...process.env,
       NODE_ENV: "production",
       ELECTRON_RUN_AS_NODE: "1",
+      // app.asar is read-only — self-update/profile/preferences JSON files
+      // need a real writable, persistent location instead of process.cwd()
+      // (see app/api/{self-update,profile,preferences}/route.ts).
+      NOVA_DATA_DIR: app.getPath("userData"),
     },
   });
 
+  serverProcess.on("error", (err) => {
+    console.error("Failed to spawn Next.js server:", err);
+  });
+
   serverProcess.on("exit", (code) => {
-    if (code && code !== 0 && mainWindow) {
+    if (code && code !== 0) {
       console.error(`Next.js server exited with code ${code}`);
     }
   });
@@ -127,6 +142,31 @@ function waitForServer(url, onReady) {
   attempt();
 }
 
+// Shown immediately on launch, before the Next.js server has even started —
+// starting the prod server + first page load takes a few seconds, and
+// without any feedback an impatient user tends to double/triple-click the
+// exe, spawning extra instances (see requestSingleInstanceLock below).
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 360,
+    height: 220,
+    frame: false,
+    resizable: false,
+    movable: false,
+    backgroundColor: "#0a0d0e",
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+
+  splashWindow.loadFile(path.join(__dirname, "splash.html"));
+  splashWindow.once("ready-to-show", () => splashWindow && splashWindow.show());
+  splashWindow.on("closed", () => {
+    splashWindow = null;
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1600,
@@ -137,6 +177,7 @@ function createWindow() {
     autoHideMenuBar: true,
     title: "N.O.V.A.",
     fullscreen: true,
+    show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -145,6 +186,17 @@ function createWindow() {
   });
 
   mainWindow.loadURL(`http://localhost:${PORT}`);
+
+  // Swap splash -> main window only once the real UI has actually painted,
+  // not just once the HTTP server answers (first paint after a fresh
+  // "next start" includes route compilation and is noticeably slower).
+  mainWindow.once("ready-to-show", () => {
+    if (splashWindow) {
+      splashWindow.close();
+      splashWindow = null;
+    }
+    mainWindow.show();
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -180,27 +232,44 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
-  // Web Speech API / MediaPipe need mic + camera without a manual prompt
-  // dialog getting in the way (Electron blocks getUserMedia by default).
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    if (permission === "media" || permission === "geolocation") {
-      callback(true);
-      return;
-    }
-    callback(false);
+// Launching the exe again while it's already starting up (impatient
+// double-click) would otherwise spawn a second Next.js server fighting over
+// the same port. Bounce the second instance and just focus/refocus whatever
+// window (splash or main) the first instance already has up.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const win = mainWindow || splashWindow;
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.focus();
   });
 
-  startNextServer();
-  startWhisperServer();
-  waitForServer(`http://localhost:${PORT}`, createWindow);
+  app.whenReady().then(() => {
+    // Web Speech API / MediaPipe need mic + camera without a manual prompt
+    // dialog getting in the way (Electron blocks getUserMedia by default).
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      if (permission === "media" || permission === "geolocation") {
+        callback(true);
+        return;
+      }
+      callback(false);
+    });
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      waitForServer(`http://localhost:${PORT}`, createWindow);
-    }
+    createSplashWindow();
+    startNextServer();
+    startWhisperServer();
+    waitForServer(`http://localhost:${PORT}`, createWindow);
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        waitForServer(`http://localhost:${PORT}`, createWindow);
+      }
+    });
   });
-});
+}
 
 function killServer() {
   if (serverProcess && !serverProcess.killed) {

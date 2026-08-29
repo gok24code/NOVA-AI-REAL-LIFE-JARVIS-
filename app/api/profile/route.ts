@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 
-const PROFILE_PATH = join(process.cwd(), "nova_profile.json");
+const PROFILE_PATH = join(process.env.NOVA_DATA_DIR || process.cwd(), "nova_profile.json");
 const MAX_PREFERENCES = 40;
 
 interface NovaProfile {

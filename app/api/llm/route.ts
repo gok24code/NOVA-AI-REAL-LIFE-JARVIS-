@@ -15,7 +15,7 @@ function loadIdentity(): string {
 
 function loadLessons(): string {
   try {
-    return readFileSync(join(process.cwd(), "nova_lessons.md"), "utf-8").trim();
+    return readFileSync(join(process.env.NOVA_DATA_DIR || process.cwd(), "nova_lessons.md"), "utf-8").trim();
   } catch {
     return "";
   }
@@ -23,7 +23,7 @@ function loadLessons(): string {
 
 function loadProfile(): string {
   try {
-    const raw = readFileSync(join(process.cwd(), "nova_profile.json"), "utf-8");
+    const raw = readFileSync(join(process.env.NOVA_DATA_DIR || process.cwd(), "nova_profile.json"), "utf-8");
     const profile = JSON.parse(raw) as { name?: string; preferences?: string[] };
     const lines: string[] = [];
     if (profile.name) lines.push(`Kullanıcının adı: ${profile.name}.`);

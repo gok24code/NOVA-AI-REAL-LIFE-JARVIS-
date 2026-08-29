@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 
-const LESSONS_PATH = join(process.cwd(), "nova_lessons.md");
+const LESSONS_PATH = join(process.env.NOVA_DATA_DIR || process.cwd(), "nova_lessons.md");
 const MAX_LESSONS = 60;
 
 async function readLessons(): Promise<string[]> {
