@@ -10,7 +10,12 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 
-const PORT = process.env.NOVA_PORT || 3000;
+// NOT 3000: that's Next.js's own default, so it collides with whatever
+// other Next.js project happens to have "npm run dev" open in a terminal.
+// waitForServer() below only checks "does *something* answer on this port",
+// not "is it actually this app" — if another project's dev server won the
+// race for 3000, this window would silently show that project instead.
+const PORT = process.env.NOVA_PORT || 4127;
 const APP_ROOT = app.isPackaged
   ? path.join(process.resourcesPath, "app.asar")
   : path.join(__dirname, "..");
